@@ -119,7 +119,7 @@ end
 function provider.processRenderedPhotos(functionContext, exportContext)
     local exportSession = exportContext.exportSession
     local publishSettings = exportContext.propertyTable
-    local catalog = exportContext.catalog
+    local catalog = LrApplication.activeCatalog()
 
     local afterFolder = publishSettings.afterFolder
     local beforeFolder = publishSettings.beforeFolder
