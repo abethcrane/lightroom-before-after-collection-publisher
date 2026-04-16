@@ -12,6 +12,10 @@ return {
             title = "Export Before and After",
             file = "ExportBeforeAndAfter.lua",
         },
+        {
+            title = "Audit Metadata",
+            file = "TestMenu.lua",
+        },
     },
 
     LrExportMenuItems = {
@@ -27,5 +31,5 @@ return {
         id = "beforeandafter",
     },
 
-    VERSION = { major = 0, minor = 2, revision = 0, display = "0.2.0" },
+    VERSION = { major = 0, minor = 3, revision = 0, display = "0.3.0" },
 }

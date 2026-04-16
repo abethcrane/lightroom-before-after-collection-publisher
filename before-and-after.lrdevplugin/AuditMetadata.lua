@@ -31,19 +31,26 @@ local function validatePhoto(photo)
     return issues
 end
 
-local function findCollectionSet(catalog, name)
+local function findOrCreateCollectionSet(catalog, name)
     for _, cs in ipairs(catalog:getChildCollectionSets()) do
         if cs:getName() == name then return cs end
     end
-    return nil
+    local cs = catalog:createCollectionSet(name, nil, true)
+    return cs
 end
 
-local function findCollection(parent, name)
-    if not parent then return nil end
-    for _, c in ipairs(parent:getChildCollections()) do
+local function findOrCreateCollection(catalog, name, parent)
+    local children
+    if parent then
+        children = parent:getChildCollections()
+    else
+        children = catalog:getChildCollections()
+    end
+    for _, c in ipairs(children) do
         if c:getName() == name then return c end
     end
-    return nil
+    local c = catalog:createCollection(name, parent, true)
+    return c
 end
 
 LrFunctionContext.postAsyncTaskWithContext("AuditMetadata", function(context)
@@ -56,32 +63,7 @@ LrFunctionContext.postAsyncTaskWithContext("AuditMetadata", function(context)
         functionContext = context,
     })
 
-    local activeSources = catalog:getActiveSources()
-    local allPhotos = {}
-
-    if activeSources and #activeSources > 0 then
-        for _, source in ipairs(activeSources) do
-            if source.getPhotos then
-                for _, p in ipairs(source:getPhotos()) do
-                    table.insert(allPhotos, p)
-                end
-            end
-        end
-    end
-
-    if #allPhotos == 0 then
-        local selected = catalog:getTargetPhotos()
-        if selected and #selected > 0 then
-            allPhotos = selected
-        end
-    end
-
-    if #allPhotos == 0 then
-        progressScope:done()
-        LrDialogs.message("Audit Metadata", "No photos found. Select a collection or some photos first.", "warning")
-        return
-    end
-
+    local allPhotos = catalog:getAllPhotos()
     local total = #allPhotos
     local flaggedPhotos = {}
     local reportLines = {}
@@ -109,34 +91,19 @@ LrFunctionContext.postAsyncTaskWithContext("AuditMetadata", function(context)
     progressScope:setCaption("Updating collection...")
     progressScope:setPortionComplete(0, 1)
 
-    local collectionSet = findCollectionSet(catalog, COLLECTION_SET_NAME)
-    if not collectionSet then
-        catalog:withWriteAccessDo("Create audit collection set", function()
-            catalog:createCollectionSet(COLLECTION_SET_NAME, nil, true)
-        end)
-        collectionSet = findCollectionSet(catalog, COLLECTION_SET_NAME)
-    end
+    catalog:withWriteAccessDo("Audit metadata — update collection", function()
+        local collectionSet = findOrCreateCollectionSet(catalog, COLLECTION_SET_NAME)
+        local collection = findOrCreateCollection(catalog, COLLECTION_NAME, collectionSet)
 
-    local collection = findCollection(collectionSet, COLLECTION_NAME)
-    if not collection then
-        catalog:withWriteAccessDo("Create audit collection", function()
-            catalog:createCollection(COLLECTION_NAME, collectionSet, true)
-        end)
-        collection = findCollection(collectionSet, COLLECTION_NAME)
-    end
-
-    local existing = collection:getPhotos()
-    if #existing > 0 then
-        catalog:withWriteAccessDo("Clear old audit results", function()
+        local existing = collection:getPhotos()
+        if #existing > 0 then
             collection:removePhotos(existing)
-        end)
-    end
+        end
 
-    if #flaggedPhotos > 0 then
-        catalog:withWriteAccessDo("Add flagged photos to audit collection", function()
+        if #flaggedPhotos > 0 then
             collection:addPhotos(flaggedPhotos)
-        end)
-    end
+        end
+    end)
 
     progressScope:setCaption("Writing report...")
 
