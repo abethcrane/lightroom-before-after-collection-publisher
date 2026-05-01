@@ -4,6 +4,7 @@ local LrExportSession = import "LrExportSession"
 local LrFileUtils = import "LrFileUtils"
 local LrLogger = import "LrLogger"
 local LrPathUtils = import "LrPathUtils"
+local LrTasks = import "LrTasks"
 local LrView = import "LrView"
 
 local DevelopDefaults = require "DevelopDefaults"
@@ -34,6 +35,7 @@ provider.metadataThatTriggersRepublish = function(publishSettings)
         label = true,
         gps = true,
         creator = true,
+        dateCreated = true,
     }
 end
 
@@ -41,9 +43,38 @@ provider.hideSections = { "exportLocation", "fileNaming" }
 provider.allowFileFormats = { "JPEG", "TIFF" }
 provider.allowColorSpaces = { "sRGB" }
 
+local REMOTE_ID_SEP = "::"
+
 local function getFileExtension(format)
     if format == "TIFF" then return "tif" end
     return "jpg"
+end
+
+local function computeSettingsHash(settings)
+    local parts = {}
+    for k, v in pairs(settings) do
+        parts[#parts + 1] = k .. "=" .. tostring(v)
+    end
+    table.sort(parts)
+    local str = table.concat(parts, ";")
+    local hash = 0
+    for i = 1, #str do
+        hash = (hash * 31 + string.byte(str, i)) % 2147483647
+    end
+    return tostring(hash)
+end
+
+local function encodeRemoteId(filename, settingsHash)
+    return filename .. REMOTE_ID_SEP .. settingsHash
+end
+
+local function decodeRemoteId(remoteId)
+    if not remoteId then return nil, nil end
+    local sep = remoteId:find(REMOTE_ID_SEP, 1, true)
+    if sep then
+        return remoteId:sub(1, sep - 1), remoteId:sub(sep + #REMOTE_ID_SEP)
+    end
+    return remoteId, nil
 end
 
 local function getExportFilename(photo, ext)
@@ -152,6 +183,7 @@ function provider.processRenderedPhotos(functionContext, exportContext)
 
     local nRenditions = exportSession:countRenditions()
     local progressScope = exportContext:configureProgress({ title = "Publishing Before & After (" .. nRenditions .. " photos)" })
+    local publishedPhotos = {}
 
     for i, rendition in exportContext:renditions({ stopIfCanceled = true }) do
         local photo = rendition.photo
@@ -163,72 +195,129 @@ function provider.processRenderedPhotos(functionContext, exportContext)
         if success then
             local ext = getFileExtension(publishSettings.LR_format or "JPEG")
             local filename = getExportFilename(photo, ext)
+            local currentSettings = photo:getDevelopSettings()
+            local newHash = computeSettingsHash(currentSettings)
+
+            local previousRemoteId = rendition.publishedPhotoId
+            local _, oldHash = decodeRemoteId(previousRemoteId)
+            local needsBefore = (oldHash == nil) or (oldHash ~= newHash)
 
             local afterPath = LrPathUtils.child(afterFolder, filename)
             if LrFileUtils.exists(afterPath) then LrFileUtils.delete(afterPath) end
             LrFileUtils.move(pathOrMsg, afterPath)
             logger:trace("Published after: " .. afterPath)
 
-            local currentSettings = photo:getDevelopSettings()
-            local beforeSettings = DevelopDefaults.buildBeforeSettings(currentSettings)
+            if needsBefore then
+                logger:trace("Develop settings changed, exporting before for " .. photoName)
+                local beforeSettings = DevelopDefaults.buildBeforeSettings(currentSettings)
 
-            catalog:withWriteAccessDo("Apply before settings for publish", function()
-                photo:applyDevelopSettings(beforeSettings)
-            end)
+                catalog:withWriteAccessDo("Apply before settings for publish", function()
+                    photo:applyDevelopSettings(beforeSettings)
+                end)
 
-            local beforeExportParams = {
-                LR_export_destinationType = "specificFolder",
-                LR_export_destinationPathPrefix = beforeFolder,
-                LR_export_useSubfolder = false,
-                LR_format = publishSettings.LR_format or "JPEG",
-                LR_jpeg_quality = publishSettings.LR_jpeg_quality or 0.85,
-                LR_export_colorSpace = publishSettings.LR_export_colorSpace or "sRGB",
-                LR_size_doConstrain = publishSettings.LR_size_doConstrain or false,
-                LR_size_maxHeight = publishSettings.LR_size_maxHeight or 9999,
-                LR_size_maxWidth = publishSettings.LR_size_maxWidth or 9999,
-                LR_size_resizeType = "longEdge",
-                LR_collisionHandling = "overwrite",
-                LR_export_bitDepth = 8,
-                LR_reimportExportedPhoto = false,
-                LR_outputSharpeningOn = false,
-                LR_useWatermark = false,
-            }
+                local beforeExportParams = {
+                    LR_export_destinationType = "specificFolder",
+                    LR_export_destinationPathPrefix = beforeFolder,
+                    LR_export_useSubfolder = false,
+                    LR_format = publishSettings.LR_format or "JPEG",
+                    LR_jpeg_quality = publishSettings.LR_jpeg_quality or 1,
+                    LR_export_colorSpace = publishSettings.LR_export_colorSpace or "sRGB",
+                    LR_size_doConstrain = publishSettings.LR_size_doConstrain or false,
+                    LR_size_maxHeight = publishSettings.LR_size_maxHeight or 9999,
+                    LR_size_maxWidth = publishSettings.LR_size_maxWidth or 9999,
+                    LR_size_resizeType = publishSettings.LR_size_resizeType or "longEdge",
+                    LR_collisionHandling = "overwrite",
+                    LR_export_bitDepth = publishSettings.LR_export_bitDepth or 8,
+                    LR_reimportExportedPhoto = false,
+                    LR_outputSharpeningOn = publishSettings.LR_outputSharpeningOn or false,
+                    LR_useWatermark = false,
+                }
 
-            local beforeSession = LrExportSession({ photosToExport = { photo }, exportSettings = beforeExportParams })
-            for _, bRendition in beforeSession:renditions() do
-                local bSuccess, bPath = bRendition:waitForRender()
-                if bSuccess then
-                    local beforePath = LrPathUtils.child(beforeFolder, filename)
-                    if bPath ~= beforePath then
-                        if LrFileUtils.exists(beforePath) then LrFileUtils.delete(beforePath) end
-                        LrFileUtils.move(bPath, beforePath)
+                local beforeSession = LrExportSession({ photosToExport = { photo }, exportSettings = beforeExportParams })
+                for _, bRendition in beforeSession:renditions() do
+                    local bSuccess, bPath = bRendition:waitForRender()
+                    if bSuccess then
+                        local beforePath = LrPathUtils.child(beforeFolder, filename)
+                        if bPath ~= beforePath then
+                            if LrFileUtils.exists(beforePath) then LrFileUtils.delete(beforePath) end
+                            LrFileUtils.move(bPath, beforePath)
+                        end
+                        logger:trace("Published before: " .. beforePath)
+                    else
+                        logger:error("Before render failed for " .. photoName .. ": " .. tostring(bPath))
                     end
-                    logger:trace("Published before: " .. beforePath)
-                else
-                    logger:error("Before render failed for " .. photoName .. ": " .. tostring(bPath))
                 end
+
+                catalog:withWriteAccessDo("Restore settings after publish", function()
+                    photo:applyDevelopSettings(currentSettings)
+                end)
+            else
+                logger:trace("Metadata-only change, skipping before for " .. photoName)
             end
 
-            catalog:withWriteAccessDo("Restore settings after publish", function()
-                photo:applyDevelopSettings(currentSettings)
-            end)
-
-            rendition:recordPublishedPhotoId(filename)
+            rendition:recordPublishedPhotoId(encodeRemoteId(filename, newHash))
             rendition:recordPublishedPhotoUrl(afterPath)
+            table.insert(publishedPhotos, photo)
         else
             rendition:uploadFailed(pathOrMsg)
             logger:error("Render failed for " .. photoName .. ": " .. tostring(pathOrMsg))
         end
     end
+
+    local collectionLocalId = exportContext.publishedCollection.localIdentifier
+
+    LrTasks.startAsyncTask(function()
+        LrTasks.sleep(5)
+
+        local cat = LrApplication.activeCatalog()
+        local allCollections = cat:getChildCollections()
+
+        local function findCollectionById(collections, id)
+            for _, c in ipairs(collections) do
+                if c.localIdentifier == id then return c end
+            end
+            for _, cs in ipairs(cat:getChildCollectionSets()) do
+                for _, c in ipairs(cs:getChildCollections()) do
+                    if c.localIdentifier == id then return c end
+                end
+            end
+            return nil
+        end
+
+        local pubCollection = findCollectionById(allCollections, collectionLocalId)
+        if not pubCollection then
+            logger:error("Could not find published collection to clear flags")
+            return
+        end
+
+        local publishedPhotoIds = {}
+        for _, p in ipairs(publishedPhotos) do
+            publishedPhotoIds[p.localIdentifier] = true
+        end
+
+        local pubPhotos = pubCollection:getPublishedPhotos()
+        logger:trace("Found " .. #pubPhotos .. " published photos in collection, clearing " .. #publishedPhotos .. " flags")
+
+        cat:withWriteAccessDo("Clear edited flags after publish", function()
+            for _, pp in ipairs(pubPhotos) do
+                if publishedPhotoIds[pp:getPhoto().localIdentifier] then
+                    pp:setEditedFlag(false)
+                end
+            end
+        end)
+
+        logger:trace("Edited flags cleared")
+    end)
 end
 
 function provider.deletePhotosFromPublishedCollection(publishSettings, arrayOfPhotoIds, deletedCallback, localCollectionId)
-    for _, photoId in ipairs(arrayOfPhotoIds) do
-        local afterPath = LrPathUtils.child(publishSettings.afterFolder, photoId)
-        local beforePath = LrPathUtils.child(publishSettings.beforeFolder, photoId)
+    for _, remoteId in ipairs(arrayOfPhotoIds) do
+        local filename = decodeRemoteId(remoteId)
+        local afterPath = LrPathUtils.child(publishSettings.afterFolder, filename)
+        local beforePath = LrPathUtils.child(publishSettings.beforeFolder, filename)
         if LrFileUtils.exists(afterPath) then LrFileUtils.delete(afterPath) end
         if LrFileUtils.exists(beforePath) then LrFileUtils.delete(beforePath) end
-        deletedCallback(photoId)
+        deletedCallback(remoteId)
     end
 end
 
