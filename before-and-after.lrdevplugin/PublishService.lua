@@ -8,21 +8,28 @@ local LrTasks = import "LrTasks"
 local LrView = import "LrView"
 
 local DevelopDefaults = require "DevelopDefaults"
+local RevealPublished = require "RevealPublished"
 
 local logger = LrLogger("BeforeAfterPublish")
 logger:enable("logfile")
 
 local provider = {}
 
+provider.titleForGoToPublishedPhoto = "Go to Published After"
+
+function provider.goToPublishedPhoto(publishSettings, info)
+    RevealPublished.revealPublishedSide(publishSettings, info.remoteId, "after")
+end
+
 provider.small_icon = nil
 provider.supportsIncrementalPublish = "only"
 provider.canExportVideo = false
 
 provider.exportPresetFields = {
-    { key = "afterFolder",  default = "/Users/beth/code/beth-crane-revamp/public/synced-photos" },
-    { key = "beforeFolder", default = "/Users/beth/code/beth-crane-revamp/public/before-photos" },
+    { key = "afterFolder",  default = "" },
+    { key = "beforeFolder", default = "" },
     { key = "validateMetadata", default = true },
-    { key = "requiredCreator", default = "Beth Crane" },
+    { key = "requiredCreator", default = "" },
 }
 
 provider.metadataThatTriggersRepublish = function(publishSettings)
@@ -155,6 +162,11 @@ function provider.processRenderedPhotos(functionContext, exportContext)
     local afterFolder = publishSettings.afterFolder
     local beforeFolder = publishSettings.beforeFolder
 
+    if not afterFolder or afterFolder == "" or not beforeFolder or beforeFolder == "" then
+        LrDialogs.message("Before & After Publish", "Please configure both 'after' and 'before' folder paths in the publish service settings.", "critical")
+        return
+    end
+
     for _, dir in ipairs({ afterFolder, beforeFolder }) do
         if not LrFileUtils.exists(dir) then
             LrFileUtils.createAllDirectories(dir)
@@ -209,48 +221,59 @@ function provider.processRenderedPhotos(functionContext, exportContext)
 
             if needsBefore then
                 logger:trace("Develop settings changed, exporting before for " .. photoName)
-                local beforeSettings = DevelopDefaults.buildBeforeSettings(currentSettings)
 
-                catalog:withWriteAccessDo("Apply before settings for publish", function()
-                    photo:applyDevelopSettings(beforeSettings)
+                catalog:withWriteAccessDo("Before/After publish safety snapshot", function()
+                    photo:createDevelopSnapshot("Before-After Backup", true)
                 end)
 
-                local beforeExportParams = {
-                    LR_export_destinationType = "specificFolder",
-                    LR_export_destinationPathPrefix = beforeFolder,
-                    LR_export_useSubfolder = false,
-                    LR_format = publishSettings.LR_format or "JPEG",
-                    LR_jpeg_quality = publishSettings.LR_jpeg_quality or 1,
-                    LR_export_colorSpace = publishSettings.LR_export_colorSpace or "sRGB",
-                    LR_size_doConstrain = publishSettings.LR_size_doConstrain or false,
-                    LR_size_maxHeight = publishSettings.LR_size_maxHeight or 9999,
-                    LR_size_maxWidth = publishSettings.LR_size_maxWidth or 9999,
-                    LR_size_resizeType = publishSettings.LR_size_resizeType or "longEdge",
-                    LR_collisionHandling = "overwrite",
-                    LR_export_bitDepth = publishSettings.LR_export_bitDepth or 8,
-                    LR_reimportExportedPhoto = false,
-                    LR_outputSharpeningOn = publishSettings.LR_outputSharpeningOn or false,
-                    LR_useWatermark = false,
-                }
+                local beforeSettings = DevelopDefaults.buildBeforeSettings(currentSettings)
 
-                local beforeSession = LrExportSession({ photosToExport = { photo }, exportSettings = beforeExportParams })
-                for _, bRendition in beforeSession:renditions() do
-                    local bSuccess, bPath = bRendition:waitForRender()
-                    if bSuccess then
-                        local beforePath = LrPathUtils.child(beforeFolder, filename)
-                        if bPath ~= beforePath then
-                            if LrFileUtils.exists(beforePath) then LrFileUtils.delete(beforePath) end
-                            LrFileUtils.move(bPath, beforePath)
+                local beforeOk, beforeErr = pcall(function()
+                    catalog:withWriteAccessDo("Apply before settings for publish", function()
+                        photo:applyDevelopSettings(beforeSettings)
+                    end)
+
+                    local beforeExportParams = {
+                        LR_export_destinationType = "specificFolder",
+                        LR_export_destinationPathPrefix = beforeFolder,
+                        LR_export_useSubfolder = false,
+                        LR_format = publishSettings.LR_format or "JPEG",
+                        LR_jpeg_quality = publishSettings.LR_jpeg_quality or 1,
+                        LR_export_colorSpace = publishSettings.LR_export_colorSpace or "sRGB",
+                        LR_size_doConstrain = publishSettings.LR_size_doConstrain or false,
+                        LR_size_maxHeight = publishSettings.LR_size_maxHeight or 9999,
+                        LR_size_maxWidth = publishSettings.LR_size_maxWidth or 9999,
+                        LR_size_resizeType = publishSettings.LR_size_resizeType or "longEdge",
+                        LR_collisionHandling = "overwrite",
+                        LR_export_bitDepth = publishSettings.LR_export_bitDepth or 8,
+                        LR_reimportExportedPhoto = false,
+                        LR_outputSharpeningOn = publishSettings.LR_outputSharpeningOn or false,
+                        LR_useWatermark = false,
+                    }
+
+                    local beforeSession = LrExportSession({ photosToExport = { photo }, exportSettings = beforeExportParams })
+                    for _, bRendition in beforeSession:renditions() do
+                        local bSuccess, bPath = bRendition:waitForRender()
+                        if bSuccess then
+                            local beforePath = LrPathUtils.child(beforeFolder, filename)
+                            if bPath ~= beforePath then
+                                if LrFileUtils.exists(beforePath) then LrFileUtils.delete(beforePath) end
+                                LrFileUtils.move(bPath, beforePath)
+                            end
+                            logger:trace("Published before: " .. beforePath)
+                        else
+                            logger:error("Before render failed for " .. photoName .. ": " .. tostring(bPath))
                         end
-                        logger:trace("Published before: " .. beforePath)
-                    else
-                        logger:error("Before render failed for " .. photoName .. ": " .. tostring(bPath))
                     end
-                end
+                end)
 
                 catalog:withWriteAccessDo("Restore settings after publish", function()
                     photo:applyDevelopSettings(currentSettings)
                 end)
+
+                if not beforeOk then
+                    logger:error("Error during before export for " .. photoName .. ": " .. tostring(beforeErr))
+                end
             else
                 logger:trace("Metadata-only change, skipping before for " .. photoName)
             end

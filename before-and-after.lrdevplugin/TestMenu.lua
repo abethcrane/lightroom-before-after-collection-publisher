@@ -5,16 +5,28 @@ local LrFunctionContext = import "LrFunctionContext"
 local LrLogger = import "LrLogger"
 local LrPathUtils = import "LrPathUtils"
 local LrProgressScope = import "LrProgressScope"
-local LrTasks = import "LrTasks"
 
 local logger = LrLogger("BeforeAfterAudit")
 logger:enable("logfile")
 
 local COLLECTION_SET_NAME = "Before & After"
 local COLLECTION_NAME = "Metadata Issues"
-local REQUIRED_CREATOR = "Beth Crane"
 
-local function validatePhoto(photo)
+local function getRequiredCreator()
+    local catalog = LrApplication.activeCatalog()
+    local publishServices = catalog:getPublishServices(_PLUGIN.id)
+    if publishServices then
+        for _, service in ipairs(publishServices) do
+            local settings = service:getPublishSettings()
+            if settings and settings.requiredCreator and settings.requiredCreator ~= "" then
+                return settings.requiredCreator
+            end
+        end
+    end
+    return nil
+end
+
+local function validatePhoto(photo, requiredCreator)
     local issues = {}
     local title = photo:getFormattedMetadata("title")
     if not title or title == "" then
@@ -24,9 +36,11 @@ local function validatePhoto(photo)
     if not camera or camera == "" then
         table.insert(issues, "missing camera model")
     end
-    local creator = photo:getFormattedMetadata("creator")
-    if creator ~= REQUIRED_CREATOR then
-        table.insert(issues, "creator is '" .. tostring(creator) .. "', expected '" .. REQUIRED_CREATOR .. "'")
+    if requiredCreator then
+        local creator = photo:getFormattedMetadata("creator")
+        if creator ~= requiredCreator then
+            table.insert(issues, "creator is '" .. tostring(creator) .. "', expected '" .. requiredCreator .. "'")
+        end
     end
     return issues
 end
@@ -82,6 +96,7 @@ LrFunctionContext.postAsyncTaskWithContext("AuditMetadata", function(context)
         return
     end
 
+    local requiredCreator = getRequiredCreator()
     local total = #allPhotos
     local flaggedPhotos = {}
     local reportLines = {}
@@ -92,7 +107,7 @@ LrFunctionContext.postAsyncTaskWithContext("AuditMetadata", function(context)
         if progressScope:isCanceled() then break end
         progressScope:setPortionComplete(i, total)
 
-        local issues = validatePhoto(photo)
+        local issues = validatePhoto(photo, requiredCreator)
         if #issues > 0 then
             table.insert(flaggedPhotos, photo)
             local name = photo:getFormattedMetadata("fileName")

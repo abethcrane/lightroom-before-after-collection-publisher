@@ -75,9 +75,43 @@ Logs go to Lightroom's plugin log. Enable the log console:
 1. Open `~/Library/Application Support/Adobe/Lightroom/` (macOS) or `%APPDATA%\Adobe\Lightroom\` (Windows)
 2. Look for log files, or use Lightroom's built-in debug console
 
+## Publish Service
+
+The plugin includes a publish service for incremental before/after publishing.
+
+### Setup
+
+1. Go to **File > Plug-in Manager**, find "Before and After Export"
+2. In the Library module, click **+** next to **Publish Services** and choose **Before & After Publish**
+3. Configure:
+   - **After folder** — where edited images are published
+   - **Before folder** — where "before" versions are published
+   - **Metadata validation** — optionally require title, camera model, and a specific creator
+4. Add photos to the default "Photos" collection and click **Publish**
+
+### Incremental behavior
+
+The service tracks a hash of each photo's develop settings. On republish:
+- **After** images are always re-exported (metadata may have changed)
+- **Before** images are only re-exported when develop settings actually change
+
+### Deleting
+
+Removing a photo from the published collection deletes both the after and before files from disk.
+
+## Audit Metadata
+
+**Library > Plug-in Extras > Audit Metadata** scans photos from the active source (or current selection) and flags metadata issues:
+
+- Missing title
+- Missing camera model
+- Wrong/missing creator (pulls the required value from your publish service settings, if configured)
+
+Flagged photos are collected into **Before & After > Metadata Issues** and a timestamped report is saved under `reports/` in the plugin directory.
+
 ## Roadmap
 
-- [ ] Publish service provider (auto-republish when edits change)
+- [x] Publish service provider (auto-republish when edits change)
 - [ ] Integration with Jeffrey Friedl's Collection Publisher
 - [ ] Subfolder mode (before/ and after/ subdirectories instead of suffixes)
 - [ ] Configurable "before" definition (choose which settings to preserve)
@@ -85,5 +119,5 @@ Logs go to Lightroom's plugin log. Enable the log console:
 
 ## Requirements
 
-- Lightroom Classic v6+ (SDK 6.0+)
+- Lightroom Classic v6+ (SDK 5.0+)
 - Tested on Lightroom Classic v14 (2024/2025)

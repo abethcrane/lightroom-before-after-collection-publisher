@@ -16,6 +16,14 @@ return {
             title = "Audit Metadata",
             file = "TestMenu.lua",
         },
+        {
+            title = "Go to Published Before",
+            file = "GoToPublishedBefore.lua",
+        },
+        {
+            title = "Go to Published After",
+            file = "GoToPublishedAfter.lua",
+        },
     },
 
     LrExportMenuItems = {
@@ -31,5 +39,5 @@ return {
         id = "beforeandafter",
     },
 
-    VERSION = { major = 0, minor = 3, revision = 0, display = "0.3.0" },
+    VERSION = { major = 0, minor = 4, revision = 1, display = "0.4.1" },
 }
