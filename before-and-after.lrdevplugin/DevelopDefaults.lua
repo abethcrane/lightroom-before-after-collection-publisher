@@ -206,10 +206,13 @@ DevelopDefaults.SETTINGS = {
     EnableEffects = true,
     EnableCalibration = true,
     EnableGrayscaleMix = true,
+    EnableToneCurve = true,
     EnableGradientBasedCorrections = false,
     EnablePaintBasedCorrections = false,
+    EnableMaskGroupBasedCorrections = false,
     EnableRedEye = false,
     EnableRetouch = false,
+    EnableDistractionRemoval = false,
 
     -- Auto flags
     AutoBrightness = false,
@@ -229,22 +232,49 @@ DevelopDefaults.SETTINGS = {
     Treatment = "Color",
 }
 
--- Keys that applyDevelopSettings accepts but must NOT be neutralized
--- (tables/structured data that LR chokes on if set to empty/zero).
-DevelopDefaults.PASS_THROUGH_KEYS = {
-    RedEyeInfo = true,
-    RetouchInfo = true,
-    ToneCurve = true,
-    ToneCurvePV2012 = true,
-    ToneCurvePV2012Blue = true,
-    ToneCurvePV2012Green = true,
-    ToneCurvePV2012Red = true,
-    MaskGroupBasedCorrections = true,
-    LensBlur = true,
-    DepthMapInfo = true,
-    PointColors = true,
-    TrimStart = true,
-    TrimEnd = true,
+-- Keys to pass through unchanged from the current edit (internal LR state
+-- that should not be zeroed — zeroing causes wrong rendering or errors).
+DevelopDefaults.EXTRA_PASSTHROUGH_KEYS = {
+    AutoWhiteVersion = true,
+    CropConstrainAspectRatio = true,
+    CropConstrainToUnitSquare = true,
+    GrainSeed = true,
+    HDREditMode = true,
+    HDRMaxValue = true,
+    LensProfileIsEmbedded = true,
+    SDRBlend = true,
+    SDRBrightness = true,
+    SDRClarity = true,
+    SDRContrast = true,
+    SDRHighlights = true,
+    SDRShadows = true,
+    SDRWhites = true,
+    UprightCenterMode = true,
+    UprightCenterNormX = true,
+    UprightCenterNormY = true,
+}
+
+-- Linear tone curve (PV2012 default)
+local LINEAR_CURVE = { 0, 0, 255, 255 }
+
+-- Keys that need specific default values (not just 0/false/{}).
+-- applyDevelopSettings merges, so we must explicitly set these —
+-- omitting them keeps the after edit's values.
+DevelopDefaults.EXPLICIT_DEFAULTS = {
+    ToneCurve = { 0, 0, 255, 255 },
+    ToneCurvePV2012 = LINEAR_CURVE,
+    ToneCurvePV2012Red = LINEAR_CURVE,
+    ToneCurvePV2012Green = LINEAR_CURVE,
+    ToneCurvePV2012Blue = LINEAR_CURVE,
+    CurveRefineSaturation = 50,
+    Look = {},
+    FilterList = {},
+    RedEyeInfo = {},
+    RetouchInfo = {},
+    MaskGroupBasedCorrections = {},
+    LensBlur = {},
+    DepthMapInfo = {},
+    PointColors = {},
 }
 
 local function neutralize(value)
@@ -265,12 +295,12 @@ function DevelopDefaults.buildBeforeSettings(currentSettings)
     -- explicit value — applyDevelopSettings merges, so omitted keys leak.
     local before = {}
     for k, v in pairs(currentSettings) do
-        if geometry[k] then
+        if geometry[k] or DevelopDefaults.EXTRA_PASSTHROUGH_KEYS[k] then
             before[k] = v
         elseif DevelopDefaults.SETTINGS[k] ~= nil then
             before[k] = DevelopDefaults.SETTINGS[k]
-        elseif DevelopDefaults.PASS_THROUGH_KEYS[k] then
-            -- Structured data (masks, retouch, curves) — drop to clear them
+        elseif DevelopDefaults.EXPLICIT_DEFAULTS[k] ~= nil then
+            before[k] = DevelopDefaults.EXPLICIT_DEFAULTS[k]
         else
             before[k] = neutralize(v)
         end
@@ -278,6 +308,13 @@ function DevelopDefaults.buildBeforeSettings(currentSettings)
 
     -- Ensure all known defaults are present even if currentSettings lacks them
     for k, v in pairs(DevelopDefaults.SETTINGS) do
+        if before[k] == nil then
+            before[k] = v
+        end
+    end
+
+    -- Also ensure explicit defaults are present (merge won't clear omitted keys)
+    for k, v in pairs(DevelopDefaults.EXPLICIT_DEFAULTS) do
         if before[k] == nil then
             before[k] = v
         end

@@ -61,7 +61,9 @@ end
 local function computeSettingsHash(settings)
     local parts = {}
     for k, v in pairs(settings) do
-        parts[#parts + 1] = k .. "=" .. tostring(v)
+        if type(v) ~= "table" then
+            parts[#parts + 1] = k .. "=" .. tostring(v)
+        end
     end
     table.sort(parts)
     local str = table.concat(parts, ";")
@@ -232,6 +234,9 @@ function provider.processRenderedPhotos(functionContext, exportContext)
             local _, oldHash = decodeRemoteId(previousRemoteId)
             local needsBefore = (oldHash == nil) or (oldHash ~= newHash)
 
+            logger:info(string.format("Hash check %s: old=%s new=%s needsBefore=%s",
+                photoName, tostring(oldHash), tostring(newHash), tostring(needsBefore)))
+
             local afterPath = LrPathUtils.child(afterFolder, filename)
             if LrFileUtils.exists(afterPath) then LrFileUtils.delete(afterPath) end
             LrFileUtils.move(pathOrMsg, afterPath)
@@ -240,40 +245,6 @@ function provider.processRenderedPhotos(functionContext, exportContext)
             if needsBefore then
                 logger:info("Develop settings changed, exporting before for " .. photoName)
                 local beforeSettings = DevelopDefaults.buildBeforeSettings(currentSettings)
-
-                -- Diagnostic: dump current vs before settings to file for debugging
-                local dumpPath = LrPathUtils.child(beforeFolder, "_debug_settings.txt")
-                local df = io.open(dumpPath, "w")
-                if df then
-                    df:write("=== CURRENT (after) settings ===\n")
-                    local ckeys = {}
-                    for k in pairs(currentSettings) do ckeys[#ckeys+1] = k end
-                    table.sort(ckeys)
-                    for _, k in ipairs(ckeys) do
-                        df:write(string.format("  %s = %s (%s)\n", k, tostring(currentSettings[k]), type(currentSettings[k])))
-                    end
-                    df:write("\n=== BEFORE settings we're applying ===\n")
-                    local bkeys = {}
-                    for k in pairs(beforeSettings) do bkeys[#bkeys+1] = k end
-                    table.sort(bkeys)
-                    for _, k in ipairs(bkeys) do
-                        df:write(string.format("  %s = %s (%s)\n", k, tostring(beforeSettings[k]), type(beforeSettings[k])))
-                    end
-                    df:write("\n=== Keys in CURRENT but NOT in BEFORE ===\n")
-                    for _, k in ipairs(ckeys) do
-                        if beforeSettings[k] == nil then
-                            df:write(string.format("  DROPPED: %s = %s (%s)\n", k, tostring(currentSettings[k]), type(currentSettings[k])))
-                        end
-                    end
-                    df:write("\n=== Keys CHANGED (current -> before) ===\n")
-                    for _, k in ipairs(ckeys) do
-                        if beforeSettings[k] ~= nil and tostring(beforeSettings[k]) ~= tostring(currentSettings[k]) then
-                            df:write(string.format("  %s: %s -> %s\n", k, tostring(currentSettings[k]), tostring(beforeSettings[k])))
-                        end
-                    end
-                    df:close()
-                    logger:info("Debug settings dump: " .. dumpPath)
-                end
 
                 catalog:withWriteAccessDo("Apply before settings for publish", function()
                     photo:applyDevelopSettings(beforeSettings)
@@ -315,6 +286,15 @@ function provider.processRenderedPhotos(functionContext, exportContext)
                 catalog:withWriteAccessDo("Restore settings after publish", function()
                     photo:applyDevelopSettings(currentSettings)
                 end)
+
+                -- Re-read settings after restore: applyDevelopSettings is a merge
+                -- so the round-tripped state may differ slightly. Use the post-restore
+                -- hash so the next publish sees a matching hash and skips the before.
+                local restoredSettings = photo:getDevelopSettings()
+                local restoredHash = computeSettingsHash(restoredSettings)
+                logger:info(string.format("Hash post-restore %s: before-restore=%s after-restore=%s match=%s",
+                    photoName, newHash, restoredHash, tostring(newHash == restoredHash)))
+                newHash = restoredHash
             else
                 logger:info("Metadata-only change, skipping before for " .. photoName)
             end
@@ -331,8 +311,6 @@ function provider.processRenderedPhotos(functionContext, exportContext)
     local publishedCollection = exportContext.publishedCollection
 
     LrTasks.startAsyncTask(function()
-        LrTasks.sleep(5)
-
         local cat = LrApplication.activeCatalog()
 
         local publishedPhotoIds = {}
@@ -340,18 +318,34 @@ function provider.processRenderedPhotos(functionContext, exportContext)
             publishedPhotoIds[p.localIdentifier] = true
         end
 
-        local pubPhotos = publishedCollection:getPublishedPhotos()
-        logger:info("Found " .. #pubPhotos .. " published photos in collection, clearing " .. #publishedPhotos .. " flags")
+        -- LR's publish watcher re-marks photos as modified after the restore
+        -- step changes develop settings. We need to clear flags after the
+        -- watcher has settled. Try multiple times with increasing delays.
+        for attempt = 1, 3 do
+            LrTasks.sleep(attempt == 1 and 8 or 5)
 
-        cat:withWriteAccessDo("Clear edited flags after publish", function()
+            local pubPhotos = publishedCollection:getPublishedPhotos()
+            local targets = {}
             for _, pp in ipairs(pubPhotos) do
-                if publishedPhotoIds[pp:getPhoto().localIdentifier] then
-                    pp:setEditedFlag(false)
+                local p = pp:getPhoto()
+                if p and publishedPhotoIds[p.localIdentifier] and pp:getEditedFlag() then
+                    targets[#targets + 1] = pp
                 end
             end
-        end)
 
-        logger:info("Edited flags cleared")
+            if #targets == 0 then
+                logger:info("Flags already clear (attempt " .. attempt .. ")")
+                break
+            end
+
+            cat:withWriteAccessDo("Clear edited flags after publish", function()
+                for _, pp in ipairs(targets) do
+                    pp:setEditedFlag(false)
+                end
+            end)
+
+            logger:info("Cleared " .. #targets .. " edited flag(s) (attempt " .. attempt .. ")")
+        end
     end)
 end
 
