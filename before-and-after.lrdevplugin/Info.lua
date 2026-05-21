@@ -14,7 +14,7 @@ return {
         },
         {
             title = "Audit Metadata",
-            file = "TestMenu.lua",
+            file = "DumpSettings.lua",
         },
         {
             title = "Go to Published Before",
@@ -39,5 +39,5 @@ return {
         id = "beforeandafter",
     },
 
-    VERSION = { major = 0, minor = 6, revision = 4, display = "0.6.4" },
+    VERSION = { major = 0, minor = 7, revision = 0, display = "0.7.0" },
 }
