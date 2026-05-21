@@ -39,5 +39,5 @@ return {
         id = "beforeandafter",
     },
 
-    VERSION = { major = 0, minor = 7, revision = 0, display = "0.7.0" },
+    VERSION = { major = 0, minor = 8, revision = 0, display = "0.8.0" },
 }

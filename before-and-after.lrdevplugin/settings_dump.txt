@@ -1,0 +1,213 @@
+Photo: IMG_0119.CR2
+Timestamp: Thu May 21 13:51:33 2026
+
+Columns:
+  AFTER     = current develop settings (the edited photo)
+  RECIPE    = what buildBeforeSettings() produces
+  RESOLVED  = what getDevelopSettings() returns after applying RECIPE
+  (RESOLVED shows what LR actually does with our recipe)
+
+KEY                                            AFTER                 RECIPE                RESOLVED              
+----------------------------------------------------------------------------------------------------------------------------------
+AutoBrightness                                 false                 false                 false                 
+AutoContrast                                   false                 false                 false                 
+AutoExposure                                   false                 false                 false                 
+AutoLateralCA                                  1                     1                     1                     
+AutoShadows                                    false                 false                 false                 
+AutoTone                                       -                     false                 -                      <-- recipe ignored?
+Blacks2012                                     -27                   0                     0                      <-- changed
+BlueHue                                        -46                   0                     0                      <-- changed
+BlueSaturation                                 -72                   0                     0                      <-- changed
+Brightness                                     50                    50                    50                    
+CameraProfile                                  Adobe Standard        Adobe Standard        Adobe Standard        
+ChromaticAberrationB                           0                     0                     0                     
+ChromaticAberrationR                           0                     0                     0                     
+Clarity                                        0                     0                     0                     
+Clarity2012                                    -9                    0                     0                      <-- changed
+ColorGradeBlending                             100                   50                    50                     <-- changed
+ColorGradeGlobalHue                            0                     0                     0                     
+ColorGradeGlobalLum                            0                     0                     0                     
+ColorGradeGlobalSat                            0                     0                     0                     
+ColorGradeHighlightLum                         0                     0                     0                     
+ColorGradeMidtoneHue                           0                     0                     0                     
+ColorGradeMidtoneLum                           0                     0                     0                     
+ColorGradeMidtoneSat                           0                     0                     0                     
+ColorGradeShadowLum                            0                     0                     0                     
+ColorNoiseReduction                            25                    25                    25                    
+ColorNoiseReductionDetail                      50                    50                    50                    
+ColorNoiseReductionSmoothness                  50                    50                    50                    
+Contrast                                       25                    25                    25                    
+Contrast2012                                   -3                    0                     0                      <-- changed
+ConvertToGrayscale                             false                 false                 false                 
+CropAngle                                      -0.01                 -0.01                 -0.01                 
+CropBottom                                     0.998694              0.998694              0.998694              
+CropConstrainAspectRatio                       true                  true                  true                  
+CropConstrainToUnitSquare                      1                     1                     1                     
+CropConstrainToWarp                            0                     0                     0                     
+CropLeft                                       0.001117              0.001117              0.001117              
+CropRight                                      0.998883              0.998883              0.998883              
+CropTop                                        0.001306              0.001306              0.001306              
+CurveRefineSaturation                          100                   50                    50                     <-- changed
+Defringe                                       0                     0                     0                     
+DefringeGreenAmount                            0                     0                     0                     
+DefringeGreenHueHi                             60                    60                    60                    
+DefringeGreenHueLo                             40                    40                    40                    
+DefringePurpleAmount                           0                     0                     0                     
+DefringePurpleHueHi                            70                    70                    70                    
+DefringePurpleHueLo                            30                    30                    30                    
+Dehaze                                         0                     0                     0                     
+DepthMapInfo                                   -                     [table]               [table]                <-- changed
+EnableCalibration                              true                  true                  true                  
+EnableColorAdjustments                         true                  true                  true                  
+EnableDetail                                   true                  true                  true                  
+EnableDistractionRemoval                       true                  false                 false                  <-- changed
+EnableEffects                                  true                  true                  true                  
+EnableGradientBasedCorrections                 -                     false                 -                      <-- recipe ignored?
+EnableGrayscaleMix                             true                  true                  true                  
+EnableLensCorrections                          true                  true                  true                  
+EnableMaskGroupBasedCorrections                true                  false                 false                  <-- changed
+EnablePaintBasedCorrections                    -                     false                 -                      <-- recipe ignored?
+EnableRedEye                                   true                  false                 false                  <-- changed
+EnableRetouch                                  true                  false                 false                  <-- changed
+EnableSplitToning                              true                  true                  true                  
+EnableToneCurve                                true                  true                  true                  
+EnableTransform                                true                  true                  true                  
+Exposure                                       0                     0                     0                     
+Exposure2012                                   1.4                   0                     0                      <-- changed
+FillLight                                      0                     0                     0                     
+FilterList                                     [table]               [table]               [table]               
+GrainAmount                                    45                    0                     0                      <-- changed
+GrainFrequency                                 43                    50                    50                     <-- changed
+GrainSeed                                      4124693022            4124693022            4124693022            
+GrainSize                                      15                    25                    25                     <-- changed
+GrayMixerAqua                                  -                     0                     -                      <-- recipe ignored?
+GrayMixerBlue                                  -                     0                     -                      <-- recipe ignored?
+GrayMixerGreen                                 -                     0                     -                      <-- recipe ignored?
+GrayMixerMagenta                               -                     0                     -                      <-- recipe ignored?
+GrayMixerOrange                                -                     0                     -                      <-- recipe ignored?
+GrayMixerPurple                                -                     0                     -                      <-- recipe ignored?
+GrayMixerRed                                   -                     0                     -                      <-- recipe ignored?
+GrayMixerYellow                                -                     0                     -                      <-- recipe ignored?
+GreenHue                                       94                    0                     0                      <-- changed
+GreenSaturation                                58                    0                     0                      <-- changed
+HDREditMode                                    0                     0                     0                     
+HDRMaxValue                                    4                     4                     4                     
+HighlightRecovery                              0                     0                     0                     
+Highlights2012                                 -38                   0                     0                      <-- changed
+HueAdjustmentAqua                              2                     0                     0                      <-- changed
+HueAdjustmentBlue                              11                    0                     0                      <-- changed
+HueAdjustmentGreen                             62                    0                     0                      <-- changed
+HueAdjustmentMagenta                           0                     0                     0                     
+HueAdjustmentOrange                            11                    0                     0                      <-- changed
+HueAdjustmentPurple                            5                     0                     0                      <-- changed
+HueAdjustmentRed                               20                    0                     0                      <-- changed
+HueAdjustmentYellow                            0                     0                     0                     
+LensBlur                                       [table]               [table]               [table]               
+LensManualDistortionAmount                     0                     0                     0                     
+LensProfileDigest                              5ED3D828AEAC7EB0B663363899772DDE  5ED3D828AEAC7EB0B663363899772DDE  5ED3D828AEAC7EB0B663363899772DDE  
+LensProfileDistortionScale                     100                   100                   100                   
+LensProfileEnable                              1                     1                     1                     
+LensProfileFilename                            Canon EOS-1Ds Mark III (Canon EF 24-105mm f4 L IS USM) - RAW.lcp  Canon EOS-1Ds Mark III (Canon EF 24-105mm f4 L IS USM) - RAW.lcp  Canon EOS-1Ds Mark III (Canon EF 24-105mm f4 L IS USM) - RAW.lcp  
+LensProfileIsEmbedded                          false                 false                 false                 
+LensProfileName                                Adobe (Canon EF 24-105mm f/4 L IS USM)  Adobe (Canon EF 24-105mm f/4 L IS USM)  Adobe (Canon EF 24-105mm f/4 L IS USM)  
+LensProfileSetup                               LensDefaults          LensDefaults          LensDefaults          
+LensProfileVignettingScale                     100                   100                   100                   
+Look                                           -                     [table]               -                      <-- recipe ignored?
+LuminanceAdjustmentAqua                        51                    0                     0                      <-- changed
+LuminanceAdjustmentBlue                        38                    0                     0                      <-- changed
+LuminanceAdjustmentGreen                       -9                    0                     0                      <-- changed
+LuminanceAdjustmentMagenta                     0                     0                     0                     
+LuminanceAdjustmentOrange                      -3                    0                     0                      <-- changed
+LuminanceAdjustmentPurple                      -22                   0                     0                      <-- changed
+LuminanceAdjustmentRed                         5                     0                     0                      <-- changed
+LuminanceAdjustmentYellow                      20                    0                     0                      <-- changed
+LuminanceNoiseReductionContrast                0                     0                     0                     
+LuminanceNoiseReductionDetail                  50                    50                    50                    
+LuminanceSmoothing                             62                    0                     0                      <-- changed
+MaskGroupBasedCorrections                      -                     [table]               [table]                <-- changed
+ParametricDarks                                29                    0                     0                      <-- changed
+ParametricHighlightSplit                       75                    75                    75                    
+ParametricHighlights                           -62                   0                     0                      <-- changed
+ParametricLights                               -33                   0                     0                      <-- changed
+ParametricMidtoneSplit                         50                    50                    50                    
+ParametricShadowSplit                          25                    25                    25                    
+ParametricShadows                              7                     0                     0                      <-- changed
+PerspectiveAspect                              0                     0                     0                     
+PerspectiveHorizontal                          0                     0                     0                     
+PerspectiveRotate                              0                     0                     0                     
+PerspectiveScale                               100                   100                   100                   
+PerspectiveUpright                             1                     1                     1                     
+PerspectiveVertical                            0                     0                     0                     
+PerspectiveX                                   0                     0                     0                     
+PerspectiveY                                   0                     0                     0                     
+PointColors                                    [table]               [table]               [table]               
+PostCropVignetteAmount                         0                     0                     0                     
+PostCropVignetteFeather                        50                    50                    50                    
+PostCropVignetteHighlightContrast              0                     0                     0                     
+PostCropVignetteMidpoint                       50                    50                    50                    
+PostCropVignetteRoundness                      0                     0                     0                     
+PostCropVignetteStyle                          1                     1                     1                     
+ProcessVersion                                 15.4                  15.4                  15.4                  
+RedEyeInfo                                     [table]               [table]               [table]               
+RedHue                                         78                    0                     0                      <-- changed
+RedSaturation                                  32                    0                     0                      <-- changed
+RetouchInfo                                    -                     [table]               [table]                <-- changed
+SDRBlend                                       0                     0                     0                     
+SDRBrightness                                  0                     0                     0                     
+SDRClarity                                     0                     0                     0                     
+SDRContrast                                    0                     0                     0                     
+SDRHighlights                                  0                     0                     0                     
+SDRShadows                                     0                     0                     0                     
+SDRWhites                                      0                     0                     0                     
+Saturation                                     -3                    0                     0                      <-- changed
+SaturationAdjustmentAqua                       -5                    0                     0                      <-- changed
+SaturationAdjustmentBlue                       4                     0                     0                      <-- changed
+SaturationAdjustmentGreen                      -15                   0                     0                      <-- changed
+SaturationAdjustmentMagenta                    -35                   0                     0                      <-- changed
+SaturationAdjustmentOrange                     -44                   0                     0                      <-- changed
+SaturationAdjustmentPurple                     -47                   0                     0                      <-- changed
+SaturationAdjustmentRed                        -19                   0                     0                      <-- changed
+SaturationAdjustmentYellow                     -24                   0                     0                      <-- changed
+ShadowTint                                     20                    0                     0                      <-- changed
+Shadows                                        5                     5                     5                     
+Shadows2012                                    32                    0                     0                      <-- changed
+SharpenDetail                                  25                    25                    25                    
+SharpenEdgeMasking                             66                    0                     0                      <-- changed
+SharpenRadius                                  1                     1                     1                     
+Sharpness                                      87                    40                    40                     <-- changed
+SplitToningBalance                             26                    0                     0                      <-- changed
+SplitToningHighlightHue                        134                   0                     0                      <-- changed
+SplitToningHighlightSaturation                 19                    0                     0                      <-- changed
+SplitToningShadowHue                           276                   0                     0                      <-- changed
+SplitToningShadowSaturation                    2                     0                     0                      <-- changed
+Temperature                                    4749                  4749                  4749                  
+Texture                                        -15                   0                     0                      <-- changed
+Tint                                           81                    81                    81                    
+ToneCurve                                      -                     [table]               [table]                <-- changed
+ToneCurveName                                  -                     Medium Contrast       Medium Contrast        <-- changed
+ToneCurveName2012                              Custom                Linear                Linear                 <-- changed
+ToneCurvePV2012                                [table]               [table]               [table]               
+ToneCurvePV2012Blue                            [table]               [table]               [table]               
+ToneCurvePV2012Green                           [table]               [table]               [table]               
+ToneCurvePV2012Red                             [table]               [table]               [table]               
+Treatment                                      -                     Color                 -                      <-- recipe ignored?
+UprightCenterMode                              0                     0                     0                     
+UprightCenterNormX                             0.5                   0.5                   0.5                   
+UprightCenterNormY                             0.5                   0.5                   0.5                   
+UprightFocalLength35mm                         94.0633               94.0633               94.0633               
+UprightFocalMode                               0                     0                     0                     
+UprightFourSegmentsCount                       0                     0                     0                     
+UprightPreview                                 false                 false                 false                 
+UprightTransformCount                          6                     6                     6                     
+UprightTransform_0                             1.000000000,0.000000000,0.000000000,0.000000000,1.000000000,0.000000000,0.000000000,0.000000000,1.000000000  1.000000000,0.000000000,0.000000000,0.000000000,1.000000000,0.000000000,0.000000000,0.000000000,1.000000000  1.000000000,0.000000000,0.000000000,0.000000000,1.000000000,0.000000000,0.000000000,0.000000000,1.000000000  
+UprightTransform_1                             1.004588871,-0.001995971,-0.001301501,0.004479536,1.004452009,-0.004470159,-0.000002417,-0.000008527,1.000000000  1.004588871,-0.001995971,-0.001301501,0.004479536,1.004452009,-0.004470159,-0.000002417,-0.000008527,1.000000000  1.004588871,-0.001995971,-0.001301501,0.004479536,1.004452009,-0.004470159,-0.000002417,-0.000008527,1.000000000  
+UprightTransform_2                             1.003752879,0.000734315,-0.001371767,-0.001035354,1.002743533,-0.000175275,0.001765404,-0.000230955,1.000000000  1.003752879,0.000734315,-0.001371767,-0.001035354,1.002743533,-0.000175275,0.001765404,-0.000230955,1.000000000  1.003752879,0.000734315,-0.001371767,-0.001035354,1.002743533,-0.000175275,0.001765404,-0.000230955,1.000000000  
+UprightTransform_3                             1.004463332,-0.001991456,-0.001235938,0.004480776,1.004463331,-0.004472053,0.000000000,0.000000000,1.000000000  1.004463332,-0.001991456,-0.001235938,0.004480776,1.004463331,-0.004472053,0.000000000,0.000000000,1.000000000  1.004463332,-0.001991456,-0.001235938,0.004480776,1.004463331,-0.004472053,0.000000000,0.000000000,1.000000000  
+UprightTransform_4                             1.001795264,0.000732861,-0.001275634,-0.001910237,1.001679569,-0.000000810,0.000000001,-0.000232245,1.000000000  1.001795264,0.000732861,-0.001275634,-0.001910237,1.001679569,-0.000000810,0.000000001,-0.000232245,1.000000000  1.001795264,0.000732861,-0.001275634,-0.001910237,1.001679569,-0.000000810,0.000000001,-0.000232245,1.000000000  
+UprightVersion                                 151388160             151388160             151388160             
+Vibrance                                       37                    0                     0                      <-- changed
+VignetteAmount                                 0                     0                     0                     
+VignetteMidpoint                               50                    50                    50                    
+WhiteBalance                                   Custom                Custom                Custom                
+Whites2012                                     -3                    0                     0                      <-- changed
+orientation                                    AB                    AB                    AB                    

@@ -69,16 +69,11 @@ DevelopDefaults.GEOMETRY_KEYS = {
     "CameraProfile",
     "CameraProfileDigest",
 
-    -- White balance — pass through from the current edit. applyDevelopSettings
-    -- can't re-derive the raw's as-shot WB from scratch, so we preserve
-    -- whatever WB the photo currently has. This matches the user's intent
-    -- better than a wrong guess (blue/purple casts).
-    "WhiteBalance",
-    "Temperature",
-    "Tint",
 }
 
 DevelopDefaults.SETTINGS = {
+    WhiteBalance = "As Shot",
+
     -- Basic tone (PV2012+)
     Exposure2012 = 0,
     Contrast2012 = 0,
@@ -249,6 +244,8 @@ DevelopDefaults.EXTRA_PASSTHROUGH_KEYS = {
     SDRHighlights = true,
     SDRShadows = true,
     SDRWhites = true,
+    Temperature = true,
+    Tint = true,
     UprightCenterMode = true,
     UprightCenterNormX = true,
     UprightCenterNormY = true,
@@ -267,7 +264,14 @@ DevelopDefaults.EXPLICIT_DEFAULTS = {
     ToneCurvePV2012Green = LINEAR_CURVE,
     ToneCurvePV2012Blue = LINEAR_CURVE,
     CurveRefineSaturation = 50,
-    Look = {},
+    Look = {
+        Name = "Adobe Color",
+        Amount = 1,
+        UUID = "B952C231111CD8E0ECCF14B86BAA7077",
+        SupportsAmount = false,
+        SupportsMonochrome = false,
+        SupportsOutputReferred = false,
+    },
     FilterList = {},
     RedEyeInfo = {},
     RetouchInfo = {},

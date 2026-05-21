@@ -7,12 +7,25 @@ local LrPathUtils = import "LrPathUtils"
 local LrTasks = import "LrTasks"
 local LrView = import "LrView"
 
-local DevelopDefaults = require "DevelopDefaults"
 local RevealPublished = require "RevealPublished"
 
 local logger = LrLogger("BeforeAfterPublish")
 logger:enable("logfile")
 logger:enable("print")
+
+local RESET_PRESET_NAME = "Reset"
+
+local function findResetPreset()
+    local folders = LrApplication.developPresetFolders()
+    for _, folder in ipairs(folders) do
+        for _, preset in ipairs(folder:getDevelopPresets()) do
+            if preset:getName() == RESET_PRESET_NAME then
+                return preset
+            end
+        end
+    end
+    return nil
+end
 
 local provider = {}
 
@@ -244,10 +257,14 @@ function provider.processRenderedPhotos(functionContext, exportContext)
 
             if needsBefore then
                 logger:info("Develop settings changed, exporting before for " .. photoName)
-                local beforeSettings = DevelopDefaults.buildBeforeSettings(currentSettings)
 
-                catalog:withWriteAccessDo("Apply before settings for publish", function()
-                    photo:applyDevelopSettings(beforeSettings)
+                local resetPreset = findResetPreset()
+                if not resetPreset then
+                    logger:error("Could not find '" .. RESET_PRESET_NAME .. "' develop preset — skipping before for " .. photoName)
+                else
+
+                catalog:withWriteAccessDo("Apply reset preset for before export", function()
+                    photo:applyDevelopPreset(resetPreset)
                 end)
 
                 local beforeExportParams = {
@@ -287,14 +304,13 @@ function provider.processRenderedPhotos(functionContext, exportContext)
                     photo:applyDevelopSettings(currentSettings)
                 end)
 
-                -- Re-read settings after restore: applyDevelopSettings is a merge
-                -- so the round-tripped state may differ slightly. Use the post-restore
-                -- hash so the next publish sees a matching hash and skips the before.
                 local restoredSettings = photo:getDevelopSettings()
                 local restoredHash = computeSettingsHash(restoredSettings)
-                logger:info(string.format("Hash post-restore %s: before-restore=%s after-restore=%s match=%s",
+                logger:info(string.format("Hash post-restore %s: before=%s after=%s match=%s",
                     photoName, newHash, restoredHash, tostring(newHash == restoredHash)))
                 newHash = restoredHash
+
+                end -- resetPreset else block
             else
                 logger:info("Metadata-only change, skipping before for " .. photoName)
             end
