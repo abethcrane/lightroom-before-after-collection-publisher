@@ -68,12 +68,17 @@ DevelopDefaults.GEOMETRY_KEYS = {
     "ProcessVersion",
     "CameraProfile",
     "CameraProfileDigest",
+
+    -- White balance — pass through from the current edit. applyDevelopSettings
+    -- can't re-derive the raw's as-shot WB from scratch, so we preserve
+    -- whatever WB the photo currently has. This matches the user's intent
+    -- better than a wrong guess (blue/purple casts).
+    "WhiteBalance",
+    "Temperature",
+    "Tint",
 }
 
 DevelopDefaults.SETTINGS = {
-    -- White Balance: "As Shot" uses the camera's original values
-    WhiteBalance = "As Shot",
-
     -- Basic tone (PV2012+)
     Exposure2012 = 0,
     Contrast2012 = 0,
@@ -224,16 +229,57 @@ DevelopDefaults.SETTINGS = {
     Treatment = "Color",
 }
 
-function DevelopDefaults.buildBeforeSettings(currentSettings)
-    local before = {}
+-- Keys that applyDevelopSettings accepts but must NOT be neutralized
+-- (tables/structured data that LR chokes on if set to empty/zero).
+DevelopDefaults.PASS_THROUGH_KEYS = {
+    RedEyeInfo = true,
+    RetouchInfo = true,
+    ToneCurve = true,
+    ToneCurvePV2012 = true,
+    ToneCurvePV2012Blue = true,
+    ToneCurvePV2012Green = true,
+    ToneCurvePV2012Red = true,
+    MaskGroupBasedCorrections = true,
+    LensBlur = true,
+    DepthMapInfo = true,
+    PointColors = true,
+    TrimStart = true,
+    TrimEnd = true,
+}
 
-    for k, v in pairs(DevelopDefaults.SETTINGS) do
-        before[k] = v
+local function neutralize(value)
+    local t = type(value)
+    if t == "number" then return 0 end
+    if t == "boolean" then return false end
+    if t == "table" then return {} end
+    return value
+end
+
+function DevelopDefaults.buildBeforeSettings(currentSettings)
+    local geometry = {}
+    for _, key in ipairs(DevelopDefaults.GEOMETRY_KEYS) do
+        geometry[key] = true
     end
 
-    for _, key in ipairs(DevelopDefaults.GEOMETRY_KEYS) do
-        if currentSettings[key] ~= nil then
-            before[key] = currentSettings[key]
+    -- Start from the current photo's full settings so every key gets an
+    -- explicit value — applyDevelopSettings merges, so omitted keys leak.
+    local before = {}
+    for k, v in pairs(currentSettings) do
+        if geometry[k] then
+            before[k] = v
+        elseif DevelopDefaults.SETTINGS[k] ~= nil then
+            before[k] = DevelopDefaults.SETTINGS[k]
+        elseif DevelopDefaults.PASS_THROUGH_KEYS[k] then
+            -- Structured data (masks, retouch, curves) — drop to clear them
+        else
+            before[k] = neutralize(v)
+        end
+    end
+
+    -- Ensure all known defaults are present even if currentSettings lacks them
+    for k, v in pairs(DevelopDefaults.SETTINGS) do
+        if before[k] == nil then
+            before[k] = v
         end
     end
 

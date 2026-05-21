@@ -241,6 +241,40 @@ function provider.processRenderedPhotos(functionContext, exportContext)
                 logger:info("Develop settings changed, exporting before for " .. photoName)
                 local beforeSettings = DevelopDefaults.buildBeforeSettings(currentSettings)
 
+                -- Diagnostic: dump current vs before settings to file for debugging
+                local dumpPath = LrPathUtils.child(beforeFolder, "_debug_settings.txt")
+                local df = io.open(dumpPath, "w")
+                if df then
+                    df:write("=== CURRENT (after) settings ===\n")
+                    local ckeys = {}
+                    for k in pairs(currentSettings) do ckeys[#ckeys+1] = k end
+                    table.sort(ckeys)
+                    for _, k in ipairs(ckeys) do
+                        df:write(string.format("  %s = %s (%s)\n", k, tostring(currentSettings[k]), type(currentSettings[k])))
+                    end
+                    df:write("\n=== BEFORE settings we're applying ===\n")
+                    local bkeys = {}
+                    for k in pairs(beforeSettings) do bkeys[#bkeys+1] = k end
+                    table.sort(bkeys)
+                    for _, k in ipairs(bkeys) do
+                        df:write(string.format("  %s = %s (%s)\n", k, tostring(beforeSettings[k]), type(beforeSettings[k])))
+                    end
+                    df:write("\n=== Keys in CURRENT but NOT in BEFORE ===\n")
+                    for _, k in ipairs(ckeys) do
+                        if beforeSettings[k] == nil then
+                            df:write(string.format("  DROPPED: %s = %s (%s)\n", k, tostring(currentSettings[k]), type(currentSettings[k])))
+                        end
+                    end
+                    df:write("\n=== Keys CHANGED (current -> before) ===\n")
+                    for _, k in ipairs(ckeys) do
+                        if beforeSettings[k] ~= nil and tostring(beforeSettings[k]) ~= tostring(currentSettings[k]) then
+                            df:write(string.format("  %s: %s -> %s\n", k, tostring(currentSettings[k]), tostring(beforeSettings[k])))
+                        end
+                    end
+                    df:close()
+                    logger:info("Debug settings dump: " .. dumpPath)
+                end
+
                 catalog:withWriteAccessDo("Apply before settings for publish", function()
                     photo:applyDevelopSettings(beforeSettings)
                 end)
@@ -294,38 +328,19 @@ function provider.processRenderedPhotos(functionContext, exportContext)
         end
     end
 
-    local collectionLocalId = exportContext.publishedCollection.localIdentifier
+    local publishedCollection = exportContext.publishedCollection
 
     LrTasks.startAsyncTask(function()
         LrTasks.sleep(5)
 
         local cat = LrApplication.activeCatalog()
-        local allCollections = cat:getChildCollections()
-
-        local function findCollectionById(collections, id)
-            for _, c in ipairs(collections) do
-                if c.localIdentifier == id then return c end
-            end
-            for _, cs in ipairs(cat:getChildCollectionSets()) do
-                for _, c in ipairs(cs:getChildCollections()) do
-                    if c.localIdentifier == id then return c end
-                end
-            end
-            return nil
-        end
-
-        local pubCollection = findCollectionById(allCollections, collectionLocalId)
-        if not pubCollection then
-            logger:error("Could not find published collection to clear flags")
-            return
-        end
 
         local publishedPhotoIds = {}
         for _, p in ipairs(publishedPhotos) do
             publishedPhotoIds[p.localIdentifier] = true
         end
 
-        local pubPhotos = pubCollection:getPublishedPhotos()
+        local pubPhotos = publishedCollection:getPublishedPhotos()
         logger:info("Found " .. #pubPhotos .. " published photos in collection, clearing " .. #publishedPhotos .. " flags")
 
         cat:withWriteAccessDo("Clear edited flags after publish", function()
