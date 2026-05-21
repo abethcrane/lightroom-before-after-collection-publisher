@@ -1,14 +1,21 @@
 local LrApplication = import "LrApplication"
+local LrDialogs = import "LrDialogs"
 local LrExportSession = import "LrExportSession"
 local LrFileUtils = import "LrFileUtils"
 local LrPathUtils = import "LrPathUtils"
 local LrLogger = import "LrLogger"
 local LrErrors = import "LrErrors"
+local LrTasks = import "LrTasks"
 
 local DevelopDefaults = require "DevelopDefaults"
 
 local logger = LrLogger("BeforeAfterExport")
 logger:enable("logfile")
+logger:enable("print")
+
+local function catalogWrite(catalog, actionName, func)
+    catalog:withWriteAccessDo(actionName, func)
+end
 
 local BeforeAfterExport = {}
 
@@ -99,42 +106,56 @@ function BeforeAfterExport.processPhotos(photos, options, progressScope)
         progressScope:setPortionComplete(((i - 1) * 2), total * 2)
 
         local currentSettings = photo:getDevelopSettings()
-        logger:trace("Saved settings for " .. photoName)
 
-        catalog:withWriteAccessDo("Before/After safety snapshot", function()
+        catalogWrite(catalog, "Before/After safety snapshot", function()
             photo:createDevelopSnapshot("Before-After Backup", true)
         end)
 
         local ok, err = pcall(function()
-            logger:trace("Exporting 'after' for " .. photoName)
             local afterPaths = exportSinglePhoto(photo, exportParams, progressScope)
             for _, p in ipairs(afterPaths) do
                 local renamed = renameRendition(p, photo, options.afterSuffix or "-after")
                 table.insert(results.after, renamed)
-                logger:trace("After: " .. renamed)
             end
 
             progressScope:setPortionComplete(((i - 1) * 2) + 1, total * 2)
 
             local beforeSettings = DevelopDefaults.buildBeforeSettings(currentSettings)
 
-            catalog:withWriteAccessDo("Apply before settings", function()
+            catalogWrite(catalog, "Apply before settings", function()
                 photo:applyDevelopSettings(beforeSettings)
             end)
 
-            logger:trace("Exporting 'before' for " .. photoName)
             local beforePaths = exportSinglePhoto(photo, exportParams, progressScope)
             for _, p in ipairs(beforePaths) do
                 local renamed = renameRendition(p, photo, options.beforeSuffix or "-before")
                 table.insert(results.before, renamed)
-                logger:trace("Before: " .. renamed)
             end
         end)
 
-        catalog:withWriteAccessDo("Restore original settings", function()
-            photo:applyDevelopSettings(currentSettings)
+        LrTasks.sleep(0.2)
+
+        local restoreOk, restoreErr = pcall(function()
+            catalogWrite(catalog, "Restore original settings", function()
+                photo:applyDevelopSettings(currentSettings)
+            end)
         end)
-        logger:trace("Restored settings for " .. photoName)
+        if not restoreOk then
+            LrTasks.sleep(0.75)
+            restoreOk, restoreErr = pcall(function()
+                catalogWrite(catalog, "Restore original settings (retry)", function()
+                    photo:applyDevelopSettings(currentSettings)
+                end)
+            end)
+        end
+        if not restoreOk then
+            LrDialogs.message(
+                "Export Before & After",
+                "Could not restore develop settings for \"" .. photoName ..
+                    "\". Use Undo or snapshot \"Before-After Backup\" if the photo still looks like the \"before\" version.",
+                "critical"
+            )
+        end
 
         if not ok then
             logger:error("Error processing " .. photoName .. ": " .. tostring(err))

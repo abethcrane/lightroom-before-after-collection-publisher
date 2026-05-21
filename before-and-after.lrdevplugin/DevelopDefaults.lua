@@ -220,24 +220,82 @@ DevelopDefaults.SETTINGS = {
     -- Vignette (legacy)
     VignetteAmount = 0,
     VignetteMidpoint = 50,
+
+    Treatment = "Color",
 }
 
+--[[
+    Unknown develop keys (new Lightroom panels, AI masking tables, etc.) must be stripped or
+    neutralized for the "before" recipe. Otherwise applyDevelopSettings *merges* and leaves
+    master's color edits on virtual copies → wrong tint vs Lightroom's Before/After.
+]]
+local function neutralizeUnknownValue(key, value)
+    local t = type(value)
+    if t == "number" then
+        return 0
+    end
+    if t == "boolean" then
+        return false
+    end
+    if t == "string" then
+        return ""
+    end
+    if t == "table" then
+        -- Local adjustments, curves as tables, etc. Empty = none.
+        return {}
+    end
+    return nil
+end
+
 function DevelopDefaults.buildBeforeSettings(currentSettings)
+    local geometry = {}
+    for _, key in ipairs(DevelopDefaults.GEOMETRY_KEYS) do
+        geometry[key] = true
+    end
+
     local before = {}
 
-    -- Start with all defaults
+    -- Known default sliders and flags
     for k, v in pairs(DevelopDefaults.SETTINGS) do
         before[k] = v
     end
 
-    -- Overlay geometry from current edit
+    -- Geometry from current edit (crop, corrections, process + profile)
     for _, key in ipairs(DevelopDefaults.GEOMETRY_KEYS) do
         if currentSettings[key] ~= nil then
             before[key] = currentSettings[key]
         end
     end
 
-    return before
+    -- Strip any develop key from the master that we don't explicitly reset: merged applies
+    -- would otherwise keep "after" color on virtual copies.
+    local stripped = 0
+    for k, v in pairs(currentSettings) do
+        if not geometry[k] and DevelopDefaults.SETTINGS[k] == nil then
+            if
+                k == "Temperature"
+                or k == "Tint"
+                or k == "IncrementalTemperature"
+                or k == "IncrementalTint"
+            then
+                -- Let "As Shot" resolve from the raw; do not push 0 here (would magenta-cast).
+                before[k] = nil
+            else
+                before[k] = neutralizeUnknownValue(k, v)
+            end
+            stripped = stripped + 1
+        end
+    end
+
+    -- As Shot WB must not keep the master's custom Temperature/Tint from a merged apply.
+    if before.WhiteBalance == "As Shot" then
+        before.Temperature = nil
+        before.Tint = nil
+        before.IncrementalTemperature = nil
+        before.IncrementalTint = nil
+    end
+
+    return before, stripped
 end
 
 return DevelopDefaults

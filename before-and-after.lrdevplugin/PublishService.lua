@@ -1,6 +1,7 @@
 local LrApplication = import "LrApplication"
 local LrDialogs = import "LrDialogs"
 local LrExportSession = import "LrExportSession"
+local LrFunctionContext = import "LrFunctionContext"
 local LrFileUtils = import "LrFileUtils"
 local LrLogger = import "LrLogger"
 local LrPathUtils = import "LrPathUtils"
@@ -12,6 +13,7 @@ local RevealPublished = require "RevealPublished"
 
 local logger = LrLogger("BeforeAfterPublish")
 logger:enable("logfile")
+logger:enable("print")
 
 local provider = {}
 
@@ -46,11 +48,13 @@ provider.metadataThatTriggersRepublish = function(publishSettings)
     }
 end
 
-provider.hideSections = { "exportLocation", "fileNaming" }
+provider.hideSections = { "exportLocation", "fileNaming", "metadata" }
 provider.allowFileFormats = { "JPEG", "TIFF" }
 provider.allowColorSpaces = { "sRGB" }
 
 local REMOTE_ID_SEP = "::"
+
+local PUBLISH_BEFORE_RECIPE_VERSION = "1"
 
 local function getFileExtension(format)
     if format == "TIFF" then return "tif" end
@@ -69,6 +73,10 @@ local function computeSettingsHash(settings)
         hash = (hash * 31 + string.byte(str, i)) % 2147483647
     end
     return tostring(hash)
+end
+
+local function fingerprintForPublishIdentity(settings)
+    return computeSettingsHash(settings) .. "#r" .. PUBLISH_BEFORE_RECIPE_VERSION
 end
 
 local function encodeRemoteId(filename, settingsHash)
@@ -157,7 +165,6 @@ end
 function provider.processRenderedPhotos(functionContext, exportContext)
     local exportSession = exportContext.exportSession
     local publishSettings = exportContext.propertyTable
-    local catalog = LrApplication.activeCatalog()
 
     local afterFolder = publishSettings.afterFolder
     local beforeFolder = publishSettings.beforeFolder
@@ -194,8 +201,24 @@ function provider.processRenderedPhotos(functionContext, exportContext)
     end
 
     local nRenditions = exportSession:countRenditions()
+    if nRenditions == 0 then
+        LrDialogs.message(
+            "Before & After Publish",
+            "Lightroom queued 0 photos. If you expected updates, make a small Develop or Metadata "
+                .. "change so items show as Modified.",
+            "info"
+        )
+        return
+    end
+
+    logger:info(string.format(
+        "PublishService start: renditionCount=%d afterFolder=%s beforeFolder=%s recipe=r%s",
+        nRenditions, afterFolder, beforeFolder, PUBLISH_BEFORE_RECIPE_VERSION
+    ))
+
     local progressScope = exportContext:configureProgress({ title = "Publishing Before & After (" .. nRenditions .. " photos)" })
     local publishedPhotos = {}
+    local pendingBeforeJobs = {}
 
     for i, rendition in exportContext:renditions({ stopIfCanceled = true }) do
         local photo = rendition.photo
@@ -208,75 +231,40 @@ function provider.processRenderedPhotos(functionContext, exportContext)
             local ext = getFileExtension(publishSettings.LR_format or "JPEG")
             local filename = getExportFilename(photo, ext)
             local currentSettings = photo:getDevelopSettings()
-            local newHash = computeSettingsHash(currentSettings)
-
-            local previousRemoteId = rendition.publishedPhotoId
-            local _, oldHash = decodeRemoteId(previousRemoteId)
-            local needsBefore = (oldHash == nil) or (oldHash ~= newHash)
+            local newHash = fingerprintForPublishIdentity(currentSettings)
 
             local afterPath = LrPathUtils.child(afterFolder, filename)
             if LrFileUtils.exists(afterPath) then LrFileUtils.delete(afterPath) end
             LrFileUtils.move(pathOrMsg, afterPath)
-            logger:trace("Published after: " .. afterPath)
+            logger:info("publish-after " .. photoName .. ": wrote " .. afterPath)
 
-            if needsBefore then
-                logger:trace("Develop settings changed, exporting before for " .. photoName)
+            local beforeSettings = DevelopDefaults.buildBeforeSettings(currentSettings)
 
-                catalog:withWriteAccessDo("Before/After publish safety snapshot", function()
-                    photo:createDevelopSnapshot("Before-After Backup", true)
-                end)
-
-                local beforeSettings = DevelopDefaults.buildBeforeSettings(currentSettings)
-
-                local beforeOk, beforeErr = pcall(function()
-                    catalog:withWriteAccessDo("Apply before settings for publish", function()
-                        photo:applyDevelopSettings(beforeSettings)
-                    end)
-
-                    local beforeExportParams = {
-                        LR_export_destinationType = "specificFolder",
-                        LR_export_destinationPathPrefix = beforeFolder,
-                        LR_export_useSubfolder = false,
-                        LR_format = publishSettings.LR_format or "JPEG",
-                        LR_jpeg_quality = publishSettings.LR_jpeg_quality or 1,
-                        LR_export_colorSpace = publishSettings.LR_export_colorSpace or "sRGB",
-                        LR_size_doConstrain = publishSettings.LR_size_doConstrain or false,
-                        LR_size_maxHeight = publishSettings.LR_size_maxHeight or 9999,
-                        LR_size_maxWidth = publishSettings.LR_size_maxWidth or 9999,
-                        LR_size_resizeType = publishSettings.LR_size_resizeType or "longEdge",
-                        LR_collisionHandling = "overwrite",
-                        LR_export_bitDepth = publishSettings.LR_export_bitDepth or 8,
-                        LR_reimportExportedPhoto = false,
-                        LR_outputSharpeningOn = publishSettings.LR_outputSharpeningOn or false,
-                        LR_useWatermark = false,
-                    }
-
-                    local beforeSession = LrExportSession({ photosToExport = { photo }, exportSettings = beforeExportParams })
-                    for _, bRendition in beforeSession:renditions() do
-                        local bSuccess, bPath = bRendition:waitForRender()
-                        if bSuccess then
-                            local beforePath = LrPathUtils.child(beforeFolder, filename)
-                            if bPath ~= beforePath then
-                                if LrFileUtils.exists(beforePath) then LrFileUtils.delete(beforePath) end
-                                LrFileUtils.move(bPath, beforePath)
-                            end
-                            logger:trace("Published before: " .. beforePath)
-                        else
-                            logger:error("Before render failed for " .. photoName .. ": " .. tostring(bPath))
-                        end
-                    end
-                end)
-
-                catalog:withWriteAccessDo("Restore settings after publish", function()
-                    photo:applyDevelopSettings(currentSettings)
-                end)
-
-                if not beforeOk then
-                    logger:error("Error during before export for " .. photoName .. ": " .. tostring(beforeErr))
-                end
-            else
-                logger:trace("Metadata-only change, skipping before for " .. photoName)
-            end
+            table.insert(pendingBeforeJobs, {
+                photo = photo,
+                photoName = photoName,
+                filename = filename,
+                beforeSettings = beforeSettings,
+                currentSettings = currentSettings,
+                beforeFolder = beforeFolder,
+                beforeExportParams = {
+                    LR_export_destinationType = "specificFolder",
+                    LR_export_destinationPathPrefix = beforeFolder,
+                    LR_export_useSubfolder = false,
+                    LR_format = publishSettings.LR_format or "JPEG",
+                    LR_jpeg_quality = publishSettings.LR_jpeg_quality or 1,
+                    LR_export_colorSpace = publishSettings.LR_export_colorSpace or "sRGB",
+                    LR_size_doConstrain = publishSettings.LR_size_doConstrain or false,
+                    LR_size_maxHeight = publishSettings.LR_size_maxHeight or 9999,
+                    LR_size_maxWidth = publishSettings.LR_size_maxWidth or 9999,
+                    LR_size_resizeType = publishSettings.LR_size_resizeType or "longEdge",
+                    LR_collisionHandling = "overwrite",
+                    LR_export_bitDepth = publishSettings.LR_export_bitDepth or 8,
+                    LR_reimportExportedPhoto = false,
+                    LR_outputSharpeningOn = publishSettings.LR_outputSharpeningOn or false,
+                    LR_useWatermark = false,
+                },
+            })
 
             rendition:recordPublishedPhotoId(encodeRemoteId(filename, newHash))
             rendition:recordPublishedPhotoUrl(afterPath)
@@ -287,50 +275,127 @@ function provider.processRenderedPhotos(functionContext, exportContext)
         end
     end
 
-    local collectionLocalId = exportContext.publishedCollection.localIdentifier
+    -- Before exports + edited-flag clearing run in a deferred LrTask.
+    -- processRenderedPhotos is not in an LrTask context, so withWriteAccessDo
+    -- can't be called inline. LrTasks.startAsyncTask provides the required
+    -- coroutine context; { timeout } on withWriteAccessDo waits for the publish
+    -- pipeline to release the catalog write lock rather than failing immediately.
+    if #pendingBeforeJobs > 0 or #publishedPhotos > 0 then
+        local publishedCollection = exportContext.publishedCollection
 
-    LrTasks.startAsyncTask(function()
-        LrTasks.sleep(5)
+        LrTasks.startAsyncTask(function()
+            -- LR15 runs processRenderedPhotos outside an LrTask, so catalog
+            -- writes must be deferred. The publish pipeline holds the write
+            -- lock for ~30s after processRenderedPhotos returns. We sleep
+            -- past that window, then use plain withWriteAccessDo (no timeout)
+            -- which executes immediately if the lock is free.
+            -- IMPORTANT: withWriteAccessDo with { timeout } queues requests
+            -- that block each other, making the problem worse. Don't use it.
+            -- Wait for the publish pipeline to release the catalog write lock,
+            -- then poll with short-timeout probes until we can get it.
+            -- Using { timeout = 5 } so failures return "aborted" gracefully
+            -- instead of throwing (which leaves error state that blocks further writes).
+            logger:info("Deferred task: waiting for catalog lock...")
+            LrTasks.sleep(3)
 
-        local cat = LrApplication.activeCatalog()
-        local allCollections = cat:getChildCollections()
+            local cat = LrApplication.activeCatalog()
 
-        local function findCollectionById(collections, id)
-            for _, c in ipairs(collections) do
-                if c.localIdentifier == id then return c end
-            end
-            for _, cs in ipairs(cat:getChildCollectionSets()) do
-                for _, c in ipairs(cs:getChildCollections()) do
-                    if c.localIdentifier == id then return c end
+            local lockReady = false
+            for probe = 1, 60 do
+                local status = cat:withWriteAccessDo(
+                    "Lock probe " .. probe,
+                    function() end,
+                    { timeout = 3 }
+                )
+                logger:info("Lock probe " .. probe .. ": " .. tostring(status))
+                if status == "executed" then
+                    lockReady = true
+                    break
                 end
             end
-            return nil
-        end
 
-        local pubCollection = findCollectionById(allCollections, collectionLocalId)
-        if not pubCollection then
-            logger:error("Could not find published collection to clear flags")
-            return
-        end
+            if not lockReady then
+                logger:error("Could not acquire catalog lock after 3 minutes — aborting before-export")
+                return
+            end
 
-        local publishedPhotoIds = {}
-        for _, p in ipairs(publishedPhotos) do
-            publishedPhotoIds[p.localIdentifier] = true
-        end
+            if #pendingBeforeJobs > 0 then
+                logger:info("Deferred before-export: " .. #pendingBeforeJobs .. " job(s)")
 
-        local pubPhotos = pubCollection:getPublishedPhotos()
-        logger:trace("Found " .. #pubPhotos .. " published photos in collection, clearing " .. #publishedPhotos .. " flags")
+                for _, job in ipairs(pendingBeforeJobs) do
+                    local photo = job.photo
+                    local photoName = job.photoName
 
-        cat:withWriteAccessDo("Clear edited flags after publish", function()
-            for _, pp in ipairs(pubPhotos) do
-                if publishedPhotoIds[pp:getPhoto().localIdentifier] then
-                    pp:setEditedFlag(false)
+                    local snapshotStatus = cat:withWriteAccessDo("Before/After publish safety snapshot", function()
+                        photo:createDevelopSnapshot("Before-After Backup", true)
+                    end, { timeout = 30 })
+                    logger:info("Snapshot status for " .. photoName .. ": " .. tostring(snapshotStatus))
+
+                    local applyStatus = cat:withWriteAccessDo("Apply before settings for publish", function()
+                        photo:applyDevelopSettings(job.beforeSettings)
+                    end, { timeout = 30 })
+                    logger:info("Apply-before status for " .. photoName .. ": " .. tostring(applyStatus))
+
+                    if applyStatus == "executed" then
+                        local beforeSession = LrExportSession({
+                            photosToExport = { photo },
+                            exportSettings = job.beforeExportParams,
+                        })
+                        for _, bRendition in beforeSession:renditions() do
+                            local bSuccess, bPath = bRendition:waitForRender()
+                            if bSuccess then
+                                local beforePath = LrPathUtils.child(job.beforeFolder, job.filename)
+                                if bPath ~= beforePath then
+                                    if LrFileUtils.exists(beforePath) then LrFileUtils.delete(beforePath) end
+                                    LrFileUtils.move(bPath, beforePath)
+                                end
+                                logger:info("publish-before " .. photoName .. ": wrote " .. beforePath)
+                            else
+                                logger:error("Before render failed for " .. photoName .. ": " .. tostring(bPath))
+                            end
+                        end
+
+                        local restoreStatus = cat:withWriteAccessDo("Restore settings after publish", function()
+                            photo:applyDevelopSettings(job.currentSettings)
+                        end, { timeout = 30 })
+                        logger:info("Restore status for " .. photoName .. ": " .. tostring(restoreStatus))
+                    else
+                        logger:error("Before-export skipped " .. photoName .. ": could not apply before settings")
+                    end
                 end
             end
+
+            -- Clear edited flags
+            if #publishedPhotos > 0 and publishedCollection then
+                LrTasks.sleep(2)
+
+                local publishedPhotoIds = {}
+                for _, p in ipairs(publishedPhotos) do
+                    publishedPhotoIds[p.localIdentifier] = true
+                end
+
+                local pubPhotos = publishedCollection:getPublishedPhotos()
+                local targets = {}
+                for _, pp in ipairs(pubPhotos) do
+                    local p = pp:getPhoto()
+                    if p and publishedPhotoIds[p.localIdentifier] then
+                        targets[#targets + 1] = pp
+                    end
+                end
+
+                if #targets > 0 then
+                    cat:withWriteAccessDo("Clear edited flags after publish", function()
+                        for _, pp in ipairs(targets) do
+                            pp:setEditedFlag(false)
+                        end
+                    end, { timeout = 30 })
+                    logger:info("Edited flags cleared for " .. #targets .. " photo(s)")
+                end
+            end
+
+            logger:info("Deferred task complete")
         end)
-
-        logger:trace("Edited flags cleared")
-    end)
+    end
 end
 
 function provider.deletePhotosFromPublishedCollection(publishSettings, arrayOfPhotoIds, deletedCallback, localCollectionId)
