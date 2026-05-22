@@ -9,6 +9,7 @@ local LrView = import "LrView"
 
 local AuditCollections = require "AuditCollections"
 local BeforeAfterExport = require "BeforeAfterExport"
+local CatalogWrite = require "CatalogWrite"
 local RevealPublished = require "RevealPublished"
 
 local logger = LrLogger("BeforeAfterPublish")
@@ -259,7 +260,7 @@ function provider.processRenderedPhotos(functionContext, exportContext)
                     logger:warn("Could not resolve safety snapshot id for " .. photoName)
                 end
 
-                catalog:withWriteAccessDo("Apply reset preset for before export", function()
+                CatalogWrite.runWithWriteAccess(catalog, "Apply reset preset for before export", function()
                     photo:applyDevelopPreset(resetPreset)
                 end)
 
@@ -296,8 +297,13 @@ function provider.processRenderedPhotos(functionContext, exportContext)
                     end
                 end
 
+                if LrTasks.canYield() then
+                    LrTasks.sleep(0.5)
+                end
+
                 local restoreOk = BeforeAfterExport.restoreAfterBeforeExport(
-                    catalog, photo, snapshotId, currentSettings, expectedHash, photoName, "Before & After Publish"
+                    catalog, photo, snapshotId, currentSettings, expectedHash, photoName,
+                    "Before & After Publish", { suppressDialog = true }
                 )
                 if not restoreOk then
                     table.insert(restoreFailures, photo)
@@ -318,18 +324,36 @@ function provider.processRenderedPhotos(functionContext, exportContext)
         end
     end
 
-    if #restoreFailures > 0 then
-        AuditCollections.updateCollection(catalog, AuditCollections.RESTORE_COLLECTION, restoreFailures)
-        logger:info(string.format(
-            "Added %d restore failure(s) to '%s > %s'",
-            #restoreFailures, AuditCollections.COLLECTION_SET, AuditCollections.RESTORE_COLLECTION
-        ))
-    end
+    local restoreFailureCount = #restoreFailures
 
     local publishedCollection = exportContext.publishedCollection
 
     LrTasks.startAsyncTask(function()
         local cat = LrApplication.activeCatalog()
+
+        if restoreFailureCount > 0 then
+            local updated = AuditCollections.updateCollection(cat, AuditCollections.RESTORE_COLLECTION, restoreFailures)
+            if updated then
+                logger:info(string.format(
+                    "Added %d restore failure(s) to '%s > %s'",
+                    restoreFailureCount, AuditCollections.COLLECTION_SET, AuditCollections.RESTORE_COLLECTION
+                ))
+            else
+                logger:error(string.format(
+                    "Could not update '%s > %s' with %d restore failure(s)",
+                    AuditCollections.COLLECTION_SET, AuditCollections.RESTORE_COLLECTION, restoreFailureCount
+                ))
+            end
+            LrDialogs.message(
+                "Before & After Publish",
+                restoreFailureCount .. " photo(s) could not be fully restored after exporting the \"before\" version." ..
+                    "\n\nThey have been added to '" .. AuditCollections.COLLECTION_SET ..
+                    " > " .. AuditCollections.RESTORE_COLLECTION ..
+                    "'. Use Undo or snapshot \"" .. BeforeAfterExport.SNAPSHOT_NAME ..
+                    "\" on each photo if it still looks like the \"before\" version.",
+                "warning"
+            )
+        end
 
         local publishedPhotoIds = {}
         for _, p in ipairs(publishedPhotos) do
@@ -360,7 +384,7 @@ function provider.processRenderedPhotos(functionContext, exportContext)
                 for _, pp in ipairs(targets) do
                     pp:setEditedFlag(false)
                 end
-            end)
+            end, { timeout = 30 })
 
             logger:info("Cleared " .. #targets .. " edited flag(s) (attempt " .. attempt .. ")")
         end

@@ -4,6 +4,8 @@ AuditCollections.COLLECTION_SET = "Before & After"
 AuditCollections.METADATA_COLLECTION = "Metadata Issues"
 AuditCollections.RESTORE_COLLECTION = "Restore Failures"
 
+local CatalogWrite = require "CatalogWrite"
+
 local function findCollectionSet(catalog, name)
     for _, cs in ipairs(catalog:getChildCollectionSets()) do
         if cs:getName() == name then return cs end
@@ -19,25 +21,39 @@ local function findCollection(parent, name)
     return nil
 end
 
-function AuditCollections.updateCollection(catalog, collectionName, photos)
+local function ensureCollectionSet(catalog)
     local collectionSet = findCollectionSet(catalog, AuditCollections.COLLECTION_SET)
+    if collectionSet then return collectionSet end
+
+    CatalogWrite.runWithWriteAccess(catalog, "Create audit collection set", function()
+        catalog:createCollectionSet(AuditCollections.COLLECTION_SET, nil, true)
+    end)
+    return findCollectionSet(catalog, AuditCollections.COLLECTION_SET)
+end
+
+local function ensureCollection(catalog, collectionSet, collectionName)
+    local collection = findCollection(collectionSet, collectionName)
+    if collection then return collection end
+
+    CatalogWrite.runWithWriteAccess(catalog, "Create audit collection", function()
+        catalog:createCollection(collectionName, collectionSet, true)
+    end)
+    return findCollection(collectionSet, collectionName)
+end
+
+function AuditCollections.updateCollection(catalog, collectionName, photos)
+    local collectionSet = ensureCollectionSet(catalog)
     if not collectionSet then
-        catalog:withWriteAccessDo("Create audit collection set", function()
-            catalog:createCollectionSet(AuditCollections.COLLECTION_SET, nil, true)
-        end)
-        collectionSet = findCollectionSet(catalog, AuditCollections.COLLECTION_SET)
+        return false
     end
 
-    local collection = findCollection(collectionSet, collectionName)
+    local collection = ensureCollection(catalog, collectionSet, collectionName)
     if not collection then
-        catalog:withWriteAccessDo("Create audit collection", function()
-            catalog:createCollection(collectionName, collectionSet, true)
-        end)
-        collection = findCollection(collectionSet, collectionName)
+        return false
     end
 
     local existing = collection:getPhotos()
-    catalog:withWriteAccessDo("Update " .. collectionName .. " collection", function()
+    return CatalogWrite.runWithWriteAccess(catalog, "Update " .. collectionName .. " collection", function()
         if #existing > 0 then
             collection:removePhotos(existing)
         end

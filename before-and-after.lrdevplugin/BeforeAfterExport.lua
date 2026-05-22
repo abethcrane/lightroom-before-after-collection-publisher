@@ -8,6 +8,7 @@ local LrErrors = import "LrErrors"
 local LrTasks = import "LrTasks"
 
 local AuditCollections = require "AuditCollections"
+local CatalogWrite = require "CatalogWrite"
 
 local logger = LrLogger("BeforeAfterExport")
 logger:enable("logfile")
@@ -58,14 +59,15 @@ local function findSnapshotId(photo, snapshotName)
 end
 
 function BeforeAfterExport.createSafetySnapshot(catalog, photo)
-    catalog:withWriteAccessDo("Before/After safety snapshot", function()
+    local ok = CatalogWrite.runWithWriteAccess(catalog, "Before/After safety snapshot", function()
         photo:createDevelopSnapshot(SNAPSHOT_NAME, true)
     end)
+    if not ok then return nil end
     return findSnapshotId(photo, SNAPSHOT_NAME)
 end
 
 local function applyRestore(catalog, photo, snapshotId, fallbackSettings, label)
-    catalog:withWriteAccessDo(label, function()
+    return CatalogWrite.runWithWriteAccess(catalog, label, function()
         if snapshotId then
             photo:applyDevelopSnapshot(snapshotId)
         else
@@ -74,23 +76,38 @@ local function applyRestore(catalog, photo, snapshotId, fallbackSettings, label)
     end)
 end
 
-function BeforeAfterExport.restoreAfterBeforeExport(catalog, photo, snapshotId, fallbackSettings, expectedHash, photoName, dialogTitle)
-    LrTasks.sleep(0.2)
+function BeforeAfterExport.restoreAfterBeforeExport(catalog, photo, snapshotId, fallbackSettings, expectedHash, photoName, dialogTitle, options)
+    options = options or {}
+    if LrTasks.canYield() then
+        LrTasks.sleep(0.2)
+    end
 
     local function attempt(useSnapshot, suffix)
         local label = useSnapshot and "Restore develop snapshot" or "Restore develop settings"
         if suffix then
             label = label .. " " .. suffix
         end
-        return pcall(function()
-            applyRestore(catalog, photo, useSnapshot and snapshotId or nil, fallbackSettings, label)
-        end)
+        if LrTasks.canYield() then
+            return applyRestore(catalog, photo, useSnapshot and snapshotId or nil, fallbackSettings, label)
+        end
+        return CatalogWrite.runWithWriteAccessAsync(
+            catalog, label,
+            function()
+                if useSnapshot and snapshotId then
+                    photo:applyDevelopSnapshot(snapshotId)
+                else
+                    photo:applyDevelopSettings(fallbackSettings)
+                end
+            end
+        )
     end
 
-    local restoreOk = select(1, attempt(snapshotId ~= nil))
+    local restoreOk = attempt(snapshotId ~= nil)
     if not restoreOk then
-        LrTasks.sleep(0.75)
-        restoreOk = select(1, attempt(snapshotId ~= nil, "(retry)"))
+        if LrTasks.canYield() then
+            LrTasks.sleep(0.75)
+        end
+        restoreOk = attempt(snapshotId ~= nil, "(retry)")
     end
 
     if not restoreOk and snapshotId and fallbackSettings then
@@ -98,7 +115,7 @@ function BeforeAfterExport.restoreAfterBeforeExport(catalog, photo, snapshotId, 
             "Snapshot restore failed for %s, trying applyDevelopSettings fallback",
             photoName
         ))
-        restoreOk = select(1, attempt(false, "(fallback)"))
+        restoreOk = attempt(false, "(fallback)")
     end
 
     local restoredHash = expectedHash and BeforeAfterExport.computeSettingsHash(photo:getDevelopSettings()) or nil
@@ -109,7 +126,7 @@ function BeforeAfterExport.restoreAfterBeforeExport(catalog, photo, snapshotId, 
             "Snapshot restore hash mismatch for %s, trying applyDevelopSettings fallback",
             photoName
         ))
-        restoreOk = select(1, attempt(false, "(fallback)"))
+        restoreOk = attempt(false, "(fallback)")
         restoredHash = BeforeAfterExport.computeSettingsHash(photo:getDevelopSettings())
         hashMatch = restoredHash == expectedHash
     end
@@ -122,7 +139,7 @@ function BeforeAfterExport.restoreAfterBeforeExport(catalog, photo, snapshotId, 
     end
 
     local fullyRestored = restoreOk and hashMatch
-    if not fullyRestored then
+    if not fullyRestored and not options.suppressDialog then
         LrDialogs.message(
             dialogTitle or "Before & After",
             "Could not fully restore develop settings for \"" .. photoName ..
@@ -251,7 +268,7 @@ function BeforeAfterExport.processPhotos(photos, options, progressScope)
 
             progressScope:setPortionComplete(((i - 1) * 2) + 1, total * 2)
 
-            catalog:withWriteAccessDo("Apply reset preset for before", function()
+            CatalogWrite.runWithWriteAccess(catalog, "Apply reset preset for before", function()
                 photo:applyDevelopPreset(resetPreset)
             end)
 
