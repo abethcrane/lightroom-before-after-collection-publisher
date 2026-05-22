@@ -7,11 +7,14 @@ local LrLogger = import "LrLogger"
 local LrErrors = import "LrErrors"
 local LrTasks = import "LrTasks"
 
+local AuditCollections = require "AuditCollections"
+
 local logger = LrLogger("BeforeAfterExport")
 logger:enable("logfile")
 logger:enable("print")
 
 local RESET_PRESET_NAME = "Reset For Before"
+local SNAPSHOT_NAME = "Before-After Backup"
 
 local function findResetPreset()
     local folders = LrApplication.developPresetFolders()
@@ -26,6 +29,113 @@ local function findResetPreset()
 end
 
 local BeforeAfterExport = {}
+
+BeforeAfterExport.SNAPSHOT_NAME = SNAPSHOT_NAME
+
+function BeforeAfterExport.computeSettingsHash(settings)
+    local parts = {}
+    for k, v in pairs(settings) do
+        if type(v) ~= "table" then
+            parts[#parts + 1] = k .. "=" .. tostring(v)
+        end
+    end
+    table.sort(parts)
+    local str = table.concat(parts, ";")
+    local hash = 0
+    for i = 1, #str do
+        hash = (hash * 31 + string.byte(str, i)) % 2147483647
+    end
+    return tostring(hash)
+end
+
+local function findSnapshotId(photo, snapshotName)
+    for _, snap in ipairs(photo:getDevelopSnapshots()) do
+        if snap.name == snapshotName then
+            return snap.snapshotID
+        end
+    end
+    return nil
+end
+
+function BeforeAfterExport.createSafetySnapshot(catalog, photo)
+    catalog:withWriteAccessDo("Before/After safety snapshot", function()
+        photo:createDevelopSnapshot(SNAPSHOT_NAME, true)
+    end)
+    return findSnapshotId(photo, SNAPSHOT_NAME)
+end
+
+local function applyRestore(catalog, photo, snapshotId, fallbackSettings, label)
+    catalog:withWriteAccessDo(label, function()
+        if snapshotId then
+            photo:applyDevelopSnapshot(snapshotId)
+        else
+            photo:applyDevelopSettings(fallbackSettings)
+        end
+    end)
+end
+
+function BeforeAfterExport.restoreAfterBeforeExport(catalog, photo, snapshotId, fallbackSettings, expectedHash, photoName, dialogTitle)
+    LrTasks.sleep(0.2)
+
+    local function attempt(useSnapshot, suffix)
+        local label = useSnapshot and "Restore develop snapshot" or "Restore develop settings"
+        if suffix then
+            label = label .. " " .. suffix
+        end
+        return pcall(function()
+            applyRestore(catalog, photo, useSnapshot and snapshotId or nil, fallbackSettings, label)
+        end)
+    end
+
+    local restoreOk = select(1, attempt(snapshotId ~= nil))
+    if not restoreOk then
+        LrTasks.sleep(0.75)
+        restoreOk = select(1, attempt(snapshotId ~= nil, "(retry)"))
+    end
+
+    if not restoreOk and snapshotId and fallbackSettings then
+        logger:warn(string.format(
+            "Snapshot restore failed for %s, trying applyDevelopSettings fallback",
+            photoName
+        ))
+        restoreOk = select(1, attempt(false, "(fallback)"))
+    end
+
+    local restoredHash = expectedHash and BeforeAfterExport.computeSettingsHash(photo:getDevelopSettings()) or nil
+    local hashMatch = expectedHash == nil or restoredHash == expectedHash
+
+    if restoreOk and not hashMatch and snapshotId and fallbackSettings then
+        logger:warn(string.format(
+            "Snapshot restore hash mismatch for %s, trying applyDevelopSettings fallback",
+            photoName
+        ))
+        restoreOk = select(1, attempt(false, "(fallback)"))
+        restoredHash = BeforeAfterExport.computeSettingsHash(photo:getDevelopSettings())
+        hashMatch = restoredHash == expectedHash
+    end
+
+    if expectedHash then
+        logger:info(string.format(
+            "Hash post-restore %s: expected=%s actual=%s match=%s restoreOk=%s",
+            photoName, expectedHash, restoredHash, tostring(hashMatch), tostring(restoreOk)
+        ))
+    end
+
+    local fullyRestored = restoreOk and hashMatch
+    if not fullyRestored then
+        LrDialogs.message(
+            dialogTitle or "Before & After",
+            "Could not fully restore develop settings for \"" .. photoName ..
+                "\". Use Undo or snapshot \"" .. SNAPSHOT_NAME ..
+                "\" if the photo still looks like the \"before\" version." ..
+                "\n\nFailed photos from this run are added to '" ..
+                AuditCollections.COLLECTION_SET .. " > " .. AuditCollections.RESTORE_COLLECTION .. "'.",
+            "critical"
+        )
+    end
+
+    return fullyRestored, restoredHash
+end
 
 local function buildExportParams(options)
     return {
@@ -114,6 +224,7 @@ function BeforeAfterExport.processPhotos(photos, options, progressScope)
     end
 
     local exportParams = buildExportParams(options)
+    local restoreFailures = {}
 
     for i, photo in ipairs(photos) do
         if progressScope:isCanceled() then
@@ -125,10 +236,11 @@ function BeforeAfterExport.processPhotos(photos, options, progressScope)
         progressScope:setPortionComplete(((i - 1) * 2), total * 2)
 
         local currentSettings = photo:getDevelopSettings()
-
-        catalog:withWriteAccessDo("Before/After safety snapshot", function()
-            photo:createDevelopSnapshot("Before-After Backup", true)
-        end)
+        local expectedHash = BeforeAfterExport.computeSettingsHash(currentSettings)
+        local snapshotId = BeforeAfterExport.createSafetySnapshot(catalog, photo)
+        if not snapshotId then
+            logger:warn("Could not resolve safety snapshot id for " .. photoName)
+        end
 
         local ok, err = pcall(function()
             local afterPaths = exportSinglePhoto(photo, exportParams, progressScope)
@@ -150,28 +262,11 @@ function BeforeAfterExport.processPhotos(photos, options, progressScope)
             end
         end)
 
-        LrTasks.sleep(0.2)
-
-        local restoreOk, restoreErr = pcall(function()
-            catalog:withWriteAccessDo("Restore original settings", function()
-                photo:applyDevelopSettings(currentSettings)
-            end)
-        end)
+        local restoreOk = BeforeAfterExport.restoreAfterBeforeExport(
+            catalog, photo, snapshotId, currentSettings, expectedHash, photoName, "Export Before & After"
+        )
         if not restoreOk then
-            LrTasks.sleep(0.75)
-            restoreOk, restoreErr = pcall(function()
-                catalog:withWriteAccessDo("Restore original settings (retry)", function()
-                    photo:applyDevelopSettings(currentSettings)
-                end)
-            end)
-        end
-        if not restoreOk then
-            LrDialogs.message(
-                "Export Before & After",
-                "Could not restore develop settings for \"" .. photoName ..
-                    "\". Use Undo or snapshot \"Before-After Backup\" if the photo still looks like the \"before\" version.",
-                "critical"
-            )
+            table.insert(restoreFailures, photo)
         end
 
         if not ok then
@@ -180,6 +275,10 @@ function BeforeAfterExport.processPhotos(photos, options, progressScope)
         end
 
         progressScope:setPortionComplete(i * 2, total * 2)
+    end
+
+    if #restoreFailures > 0 then
+        AuditCollections.updateCollection(catalog, AuditCollections.RESTORE_COLLECTION, restoreFailures)
     end
 
     return results

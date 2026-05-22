@@ -7,6 +7,8 @@ local LrPathUtils = import "LrPathUtils"
 local LrTasks = import "LrTasks"
 local LrView = import "LrView"
 
+local AuditCollections = require "AuditCollections"
+local BeforeAfterExport = require "BeforeAfterExport"
 local RevealPublished = require "RevealPublished"
 
 local logger = LrLogger("BeforeAfterPublish")
@@ -14,52 +16,6 @@ logger:enable("logfile")
 logger:enable("print")
 
 local RESET_PRESET_NAME = "Reset For Before"
-
-local AUDIT_COLLECTION_SET = "Before & After"
-local AUDIT_COLLECTION = "Metadata Issues"
-
-local function findCollectionSet(catalog, name)
-    for _, cs in ipairs(catalog:getChildCollectionSets()) do
-        if cs:getName() == name then return cs end
-    end
-    return nil
-end
-
-local function findCollection(parent, name)
-    if not parent then return nil end
-    for _, c in ipairs(parent:getChildCollections()) do
-        if c:getName() == name then return c end
-    end
-    return nil
-end
-
-local function updateAuditCollection(catalog, flaggedPhotos)
-    local collectionSet = findCollectionSet(catalog, AUDIT_COLLECTION_SET)
-    if not collectionSet then
-        catalog:withWriteAccessDo("Create audit collection set", function()
-            catalog:createCollectionSet(AUDIT_COLLECTION_SET, nil, true)
-        end)
-        collectionSet = findCollectionSet(catalog, AUDIT_COLLECTION_SET)
-    end
-
-    local collection = findCollection(collectionSet, AUDIT_COLLECTION)
-    if not collection then
-        catalog:withWriteAccessDo("Create audit collection", function()
-            catalog:createCollection(AUDIT_COLLECTION, collectionSet, true)
-        end)
-        collection = findCollection(collectionSet, AUDIT_COLLECTION)
-    end
-
-    local existing = collection:getPhotos()
-    catalog:withWriteAccessDo("Update metadata issues collection", function()
-        if #existing > 0 then
-            collection:removePhotos(existing)
-        end
-        if #flaggedPhotos > 0 then
-            collection:addPhotos(flaggedPhotos)
-        end
-    end)
-end
 
 local function findResetPreset()
     local folders = LrApplication.developPresetFolders()
@@ -117,21 +73,7 @@ local function getFileExtension(format)
     return "jpg"
 end
 
-local function computeSettingsHash(settings)
-    local parts = {}
-    for k, v in pairs(settings) do
-        if type(v) ~= "table" then
-            parts[#parts + 1] = k .. "=" .. tostring(v)
-        end
-    end
-    table.sort(parts)
-    local str = table.concat(parts, ";")
-    local hash = 0
-    for i = 1, #str do
-        hash = (hash * 31 + string.byte(str, i)) % 2147483647
-    end
-    return tostring(hash)
-end
+local computeSettingsHash = BeforeAfterExport.computeSettingsHash
 
 local function encodeRemoteId(filename, settingsHash)
     return filename .. REMOTE_ID_SEP .. settingsHash
@@ -250,11 +192,11 @@ function provider.processRenderedPhotos(functionContext, exportContext)
             end
         end
         if #allIssues > 0 then
-            updateAuditCollection(catalog, flaggedPhotos)
+            AuditCollections.updateCollection(catalog, AuditCollections.METADATA_COLLECTION, flaggedPhotos)
             local proceed = LrDialogs.confirm(
                 "Metadata issues found",
                 #allIssues .. " photo(s) have metadata issues:\n\n" .. table.concat(allIssues, "\n")
-                    .. "\n\nFlagged photos added to '" .. AUDIT_COLLECTION_SET .. " > " .. AUDIT_COLLECTION .. "'."
+                    .. "\n\nFlagged photos added to '" .. AuditCollections.COLLECTION_SET .. " > " .. AuditCollections.METADATA_COLLECTION .. "'."
                     .. "\n\nPublish anyway?",
                 "Publish Anyway", "Cancel"
             )
@@ -280,6 +222,7 @@ function provider.processRenderedPhotos(functionContext, exportContext)
 
     local progressScope = exportContext:configureProgress({ title = "Publishing Before & After (" .. nRenditions .. " photos)" })
     local publishedPhotos = {}
+    local restoreFailures = {}
 
     for i, rendition in exportContext:renditions({ stopIfCanceled = true }) do
         local photo = rendition.photo
@@ -310,6 +253,11 @@ function provider.processRenderedPhotos(functionContext, exportContext)
                 if not resetPreset then
                     logger:error("Could not find '" .. RESET_PRESET_NAME .. "' develop preset — skipping before for " .. photoName)
                 else
+                local expectedHash = newHash
+                local snapshotId = BeforeAfterExport.createSafetySnapshot(catalog, photo)
+                if not snapshotId then
+                    logger:warn("Could not resolve safety snapshot id for " .. photoName)
+                end
 
                 catalog:withWriteAccessDo("Apply reset preset for before export", function()
                     photo:applyDevelopPreset(resetPreset)
@@ -348,12 +296,13 @@ function provider.processRenderedPhotos(functionContext, exportContext)
                     end
                 end
 
-                catalog:withWriteAccessDo("Restore settings after publish", function()
-                    photo:applyDevelopSettings(currentSettings)
-                end)
-
-                local restoredHash = computeSettingsHash(photo:getDevelopSettings())
-                newHash = restoredHash
+                local restoreOk = BeforeAfterExport.restoreAfterBeforeExport(
+                    catalog, photo, snapshotId, currentSettings, expectedHash, photoName, "Before & After Publish"
+                )
+                if not restoreOk then
+                    table.insert(restoreFailures, photo)
+                end
+                newHash = restoreOk and expectedHash or computeSettingsHash(photo:getDevelopSettings())
 
                 end -- resetPreset else block
             else
@@ -367,6 +316,14 @@ function provider.processRenderedPhotos(functionContext, exportContext)
             rendition:uploadFailed(pathOrMsg)
             logger:error("Render failed for " .. photoName .. ": " .. tostring(pathOrMsg))
         end
+    end
+
+    if #restoreFailures > 0 then
+        AuditCollections.updateCollection(catalog, AuditCollections.RESTORE_COLLECTION, restoreFailures)
+        logger:info(string.format(
+            "Added %d restore failure(s) to '%s > %s'",
+            #restoreFailures, AuditCollections.COLLECTION_SET, AuditCollections.RESTORE_COLLECTION
+        ))
     end
 
     local publishedCollection = exportContext.publishedCollection
