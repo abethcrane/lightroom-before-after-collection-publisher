@@ -247,9 +247,6 @@ function provider.processRenderedPhotos(functionContext, exportContext)
             local _, oldHash = decodeRemoteId(previousRemoteId)
             local needsBefore = (oldHash == nil) or (oldHash ~= newHash)
 
-            logger:info(string.format("Hash check %s: old=%s new=%s needsBefore=%s",
-                photoName, tostring(oldHash), tostring(newHash), tostring(needsBefore)))
-
             local afterPath = LrPathUtils.child(afterFolder, filename)
             if LrFileUtils.exists(afterPath) then LrFileUtils.delete(afterPath) end
             LrFileUtils.move(pathOrMsg, afterPath)
@@ -304,10 +301,7 @@ function provider.processRenderedPhotos(functionContext, exportContext)
                     photo:applyDevelopSettings(currentSettings)
                 end)
 
-                local restoredSettings = photo:getDevelopSettings()
-                local restoredHash = computeSettingsHash(restoredSettings)
-                logger:info(string.format("Hash post-restore %s: before=%s after=%s match=%s",
-                    photoName, newHash, restoredHash, tostring(newHash == restoredHash)))
+                local restoredHash = computeSettingsHash(photo:getDevelopSettings())
                 newHash = restoredHash
 
                 end -- resetPreset else block

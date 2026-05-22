@@ -7,14 +7,22 @@ local LrLogger = import "LrLogger"
 local LrErrors = import "LrErrors"
 local LrTasks = import "LrTasks"
 
-local DevelopDefaults = require "DevelopDefaults"
-
 local logger = LrLogger("BeforeAfterExport")
 logger:enable("logfile")
 logger:enable("print")
 
-local function catalogWrite(catalog, actionName, func)
-    catalog:withWriteAccessDo(actionName, func)
+local RESET_PRESET_NAME = "Reset"
+
+local function findResetPreset()
+    local folders = LrApplication.developPresetFolders()
+    for _, folder in ipairs(folders) do
+        for _, preset in ipairs(folder:getDevelopPresets()) do
+            if preset:getName() == RESET_PRESET_NAME then
+                return preset
+            end
+        end
+    end
+    return nil
 end
 
 local BeforeAfterExport = {}
@@ -94,6 +102,17 @@ function BeforeAfterExport.processPhotos(photos, options, progressScope)
     local results = { after = {}, before = {}, errors = {} }
     local total = #photos
 
+    local resetPreset = findResetPreset()
+    if not resetPreset then
+        LrDialogs.message(
+            "Export Before & After",
+            "Could not find a develop preset named '" .. RESET_PRESET_NAME ..
+                "'. Please install one to use as the 'before' baseline.",
+            "critical"
+        )
+        return results
+    end
+
     local exportParams = buildExportParams(options)
 
     for i, photo in ipairs(photos) do
@@ -107,7 +126,7 @@ function BeforeAfterExport.processPhotos(photos, options, progressScope)
 
         local currentSettings = photo:getDevelopSettings()
 
-        catalogWrite(catalog, "Before/After safety snapshot", function()
+        catalog:withWriteAccessDo("Before/After safety snapshot", function()
             photo:createDevelopSnapshot("Before-After Backup", true)
         end)
 
@@ -120,10 +139,8 @@ function BeforeAfterExport.processPhotos(photos, options, progressScope)
 
             progressScope:setPortionComplete(((i - 1) * 2) + 1, total * 2)
 
-            local beforeSettings = DevelopDefaults.buildBeforeSettings(currentSettings)
-
-            catalogWrite(catalog, "Apply before settings", function()
-                photo:applyDevelopSettings(beforeSettings)
+            catalog:withWriteAccessDo("Apply reset preset for before", function()
+                photo:applyDevelopPreset(resetPreset)
             end)
 
             local beforePaths = exportSinglePhoto(photo, exportParams, progressScope)
@@ -136,14 +153,14 @@ function BeforeAfterExport.processPhotos(photos, options, progressScope)
         LrTasks.sleep(0.2)
 
         local restoreOk, restoreErr = pcall(function()
-            catalogWrite(catalog, "Restore original settings", function()
+            catalog:withWriteAccessDo("Restore original settings", function()
                 photo:applyDevelopSettings(currentSettings)
             end)
         end)
         if not restoreOk then
             LrTasks.sleep(0.75)
             restoreOk, restoreErr = pcall(function()
-                catalogWrite(catalog, "Restore original settings (retry)", function()
+                catalog:withWriteAccessDo("Restore original settings (retry)", function()
                     photo:applyDevelopSettings(currentSettings)
                 end)
             end)
