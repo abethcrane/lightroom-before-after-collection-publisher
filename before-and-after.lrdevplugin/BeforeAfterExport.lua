@@ -11,7 +11,7 @@ local logger = LrLogger("BeforeAfterExport")
 logger:enable("logfile")
 logger:enable("print")
 
-local RESET_PRESET_NAME = "Reset"
+local RESET_PRESET_NAME = "Reset For Before"
 
 local function findResetPreset()
     local folders = LrApplication.developPresetFolders()

@@ -13,7 +13,53 @@ local logger = LrLogger("BeforeAfterPublish")
 logger:enable("logfile")
 logger:enable("print")
 
-local RESET_PRESET_NAME = "Reset"
+local RESET_PRESET_NAME = "Reset For Before"
+
+local AUDIT_COLLECTION_SET = "Before & After"
+local AUDIT_COLLECTION = "Metadata Issues"
+
+local function findCollectionSet(catalog, name)
+    for _, cs in ipairs(catalog:getChildCollectionSets()) do
+        if cs:getName() == name then return cs end
+    end
+    return nil
+end
+
+local function findCollection(parent, name)
+    if not parent then return nil end
+    for _, c in ipairs(parent:getChildCollections()) do
+        if c:getName() == name then return c end
+    end
+    return nil
+end
+
+local function updateAuditCollection(catalog, flaggedPhotos)
+    local collectionSet = findCollectionSet(catalog, AUDIT_COLLECTION_SET)
+    if not collectionSet then
+        catalog:withWriteAccessDo("Create audit collection set", function()
+            catalog:createCollectionSet(AUDIT_COLLECTION_SET, nil, true)
+        end)
+        collectionSet = findCollectionSet(catalog, AUDIT_COLLECTION_SET)
+    end
+
+    local collection = findCollection(collectionSet, AUDIT_COLLECTION)
+    if not collection then
+        catalog:withWriteAccessDo("Create audit collection", function()
+            catalog:createCollection(AUDIT_COLLECTION, collectionSet, true)
+        end)
+        collection = findCollection(collectionSet, AUDIT_COLLECTION)
+    end
+
+    local existing = collection:getPhotos()
+    catalog:withWriteAccessDo("Update metadata issues collection", function()
+        if #existing > 0 then
+            collection:removePhotos(existing)
+        end
+        if #flaggedPhotos > 0 then
+            collection:addPhotos(flaggedPhotos)
+        end
+    end)
+end
 
 local function findResetPreset()
     local folders = LrApplication.developPresetFolders()
@@ -193,18 +239,23 @@ function provider.processRenderedPhotos(functionContext, exportContext)
 
     if publishSettings.validateMetadata then
         local allIssues = {}
+        local flaggedPhotos = {}
         for i, rendition in exportSession:renditions() do
             local photo = rendition.photo
             local issues = validatePhoto(photo, publishSettings)
             if #issues > 0 then
                 local name = photo:getFormattedMetadata("fileName")
                 table.insert(allIssues, name .. ": " .. table.concat(issues, ", "))
+                table.insert(flaggedPhotos, photo)
             end
         end
         if #allIssues > 0 then
+            updateAuditCollection(catalog, flaggedPhotos)
             local proceed = LrDialogs.confirm(
                 "Metadata issues found",
-                #allIssues .. " photo(s) have metadata issues:\n\n" .. table.concat(allIssues, "\n") .. "\n\nPublish anyway?",
+                #allIssues .. " photo(s) have metadata issues:\n\n" .. table.concat(allIssues, "\n")
+                    .. "\n\nFlagged photos added to '" .. AUDIT_COLLECTION_SET .. " > " .. AUDIT_COLLECTION .. "'."
+                    .. "\n\nPublish anyway?",
                 "Publish Anyway", "Cancel"
             )
             if proceed == "cancel" then return end
