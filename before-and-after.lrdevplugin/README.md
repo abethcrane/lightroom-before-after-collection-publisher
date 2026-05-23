@@ -31,7 +31,8 @@ Lightroom Classic 15 requires exports to run through an export service (a plain 
 2. **File → Plug-in Extras → Export Before and After** (or **File → Export → Export Before and After**) — opens the Export dialog
 3. Choose **Before and After Export** as the export destination (top of the dialog)
 4. Set folder, format, sizing, and `-before`/`-after` suffixes
-5. Click **Export**
+5. Set **Existing Files** (Ask / Overwrite / Rename) — applies to the final suffixed filenames
+6. Click **Export**
 
 For each photo `IMG_1234.CR3`, you'll get:
 - `IMG_1234-after.jpg` — full edit

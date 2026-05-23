@@ -48,22 +48,26 @@ function provider.sectionsForTopOfDialog(f, propertyTable)
     }
 end
 
-local function buildBeforeExportParams(exportSettings, destDir)
+local function getSetting(exportSettings, lrKey, shortKey)
+    return exportSettings[lrKey] or exportSettings[shortKey]
+end
+
+local function buildBeforeExportParams(exportSettings, destDir, collisionMode)
     return {
         LR_export_destinationType = "specificFolder",
         LR_export_destinationPathPrefix = destDir,
         LR_export_useSubfolder = false,
-        LR_format = exportSettings.LR_format or "JPEG",
-        LR_jpeg_quality = exportSettings.LR_jpeg_quality or 0.85,
-        LR_export_colorSpace = exportSettings.LR_export_colorSpace or "sRGB",
-        LR_size_doConstrain = exportSettings.LR_size_doConstrain or false,
-        LR_size_maxHeight = exportSettings.LR_size_maxHeight or 9999,
-        LR_size_maxWidth = exportSettings.LR_size_maxWidth or 9999,
-        LR_size_resizeType = exportSettings.LR_size_resizeType or "longEdge",
-        LR_collisionHandling = "overwrite",
-        LR_export_bitDepth = exportSettings.LR_export_bitDepth or 8,
+        LR_format = getSetting(exportSettings, "LR_format", "format") or "JPEG",
+        LR_jpeg_quality = getSetting(exportSettings, "LR_jpeg_quality", "jpeg_quality") or 0.85,
+        LR_export_colorSpace = getSetting(exportSettings, "LR_export_colorSpace", "export_colorSpace") or "sRGB",
+        LR_size_doConstrain = getSetting(exportSettings, "LR_size_doConstrain", "size_doConstrain") or false,
+        LR_size_maxHeight = getSetting(exportSettings, "LR_size_maxHeight", "size_maxHeight") or 9999,
+        LR_size_maxWidth = getSetting(exportSettings, "LR_size_maxWidth", "size_maxWidth") or 9999,
+        LR_size_resizeType = getSetting(exportSettings, "LR_size_resizeType", "size_resizeType") or "longEdge",
+        LR_collisionHandling = collisionMode,
+        LR_export_bitDepth = getSetting(exportSettings, "LR_export_bitDepth", "export_bitDepth") or 8,
         LR_reimportExportedPhoto = false,
-        LR_outputSharpeningOn = exportSettings.LR_outputSharpeningOn or false,
+        LR_outputSharpeningOn = getSetting(exportSettings, "LR_outputSharpeningOn", "outputSharpeningOn") or false,
         LR_useWatermark = false,
     }
 end
@@ -81,6 +85,21 @@ function provider.processRenderedPhotos(functionContext, exportContext)
     end
 
     local nPhotos = exportContext.exportSession:countRenditions()
+    local renditions = {}
+    for _, rendition in exportContext:renditions({ stopIfCanceled = true }) do
+        renditions[#renditions + 1] = rendition
+    end
+
+    local collisionResolver = BeforeAfterExport.createCollisionResolver(exportSettings)
+    local conflicts = BeforeAfterExport.collectRenditionConflicts(
+        renditions, afterSuffix, beforeSuffix
+    )
+    local collisionMode = collisionResolver:resolveBatchConflicts(conflicts)
+    logger:info(string.format(
+        "Export collision: mode=%s batchConflicts=%d",
+        collisionMode, #conflicts
+    ))
+
     local progressScope = exportContext:configureProgress({
         title = "Exporting Before & After (" .. nPhotos .. " photos)",
     })
@@ -88,8 +107,13 @@ function provider.processRenderedPhotos(functionContext, exportContext)
     local restoreFailures = {}
     local successCount = 0
     local errorCount = 0
+    local skipCount = 0
 
-    for _, rendition in exportContext:renditions({ stopIfCanceled = true, progressScope = progressScope }) do
+    for _, rendition in ipairs(renditions) do
+        if progressScope:isCanceled() then
+            break
+        end
+
         local photo = rendition.photo
         local photoName = photo:getFormattedMetadata("fileName")
         progressScope:setCaption("Processing " .. photoName)
@@ -102,12 +126,19 @@ function provider.processRenderedPhotos(functionContext, exportContext)
         else
             local currentSettings = photo:getDevelopSettings()
             local expectedHash = BeforeAfterExport.computeSettingsHash(currentSettings)
+
+            local afterPath, afterSkipped = BeforeAfterExport.renameRendition(
+                pathOrMsg, photo, afterSuffix, collisionResolver
+            )
+            if afterSkipped then
+                skipCount = skipCount + 1
+                logger:info("Skipped after export for " .. photoName)
+            else
             local snapshotId = BeforeAfterExport.createSafetySnapshot(catalog, photo)
             if not snapshotId then
                 logger:warn("Could not resolve safety snapshot id for " .. photoName)
             end
 
-            local afterPath = BeforeAfterExport.renameRendition(pathOrMsg, photo, afterSuffix)
             logger:info("export-after " .. photoName .. ": wrote " .. afterPath)
 
             CatalogWrite.runWithWriteAccess(catalog, "Apply reset preset for before export", function()
@@ -115,7 +146,13 @@ function provider.processRenderedPhotos(functionContext, exportContext)
             end)
 
             local destDir = LrPathUtils.parent(afterPath)
-            local beforeExportParams = buildBeforeExportParams(exportSettings, destDir)
+            local nestedCollisionMode = collisionResolver:getMode()
+            if nestedCollisionMode == "ask" then
+                nestedCollisionMode = "overwrite"
+            end
+            local beforeExportParams = buildBeforeExportParams(
+                exportSettings, destDir, nestedCollisionMode
+            )
             local beforeSession = LrExportSession({
                 photosToExport = { photo },
                 exportSettings = beforeExportParams,
@@ -123,11 +160,19 @@ function provider.processRenderedPhotos(functionContext, exportContext)
 
             local beforeOk = true
             local beforeErr = nil
+            local beforeSkipped = false
             for _, bRendition in beforeSession:renditions({ progressScope = progressScope }) do
                 local bSuccess, bPath = bRendition:waitForRender()
                 if bSuccess then
-                    local beforePath = BeforeAfterExport.renameRendition(bPath, photo, beforeSuffix)
-                    logger:info("export-before " .. photoName .. ": wrote " .. beforePath)
+                    local beforePath, skipped = BeforeAfterExport.renameRendition(
+                        bPath, photo, beforeSuffix, collisionResolver
+                    )
+                    if skipped then
+                        beforeSkipped = true
+                        logger:info("Skipped before export for " .. photoName)
+                    else
+                        logger:info("export-before " .. photoName .. ": wrote " .. beforePath)
+                    end
                 else
                     beforeOk = false
                     beforeErr = tostring(bPath)
@@ -147,13 +192,16 @@ function provider.processRenderedPhotos(functionContext, exportContext)
                 table.insert(restoreFailures, photo)
             end
 
-            if beforeOk and restoreOk then
+            if beforeSkipped and beforeOk then
+                skipCount = skipCount + 1
+            end
+
+            if beforeOk and restoreOk and not beforeSkipped then
                 successCount = successCount + 1
-            else
+            elseif not beforeOk then
                 errorCount = errorCount + 1
-                if not beforeOk then
-                    rendition:uploadFailed(beforeErr or "Before export failed")
-                end
+                rendition:uploadFailed(beforeErr or "Before export failed")
+            end
             end
         end
     end
@@ -171,7 +219,21 @@ function provider.processRenderedPhotos(functionContext, exportContext)
         )
     end
 
-    if errorCount > 0 and successCount == 0 then
+    if skipCount > 0 and successCount > 0 then
+        LrDialogs.message(
+            "Export Before & After",
+            "Exported " .. successCount .. " photo(s), skipped " .. skipCount .. " existing file(s).",
+            "info"
+        )
+    elseif skipCount > 0 and successCount == 0 and errorCount == 0 then
+        LrDialogs.message(
+            "Export Before & After",
+            "Skipped " .. skipCount .. " existing file(s); nothing new was exported.",
+            "info"
+        )
+    end
+
+    if errorCount > 0 and successCount == 0 and skipCount == 0 then
         LrDialogs.message(
             "Export Before & After",
             "Export failed for " .. errorCount .. " photo(s). See the plugin log for details.",
