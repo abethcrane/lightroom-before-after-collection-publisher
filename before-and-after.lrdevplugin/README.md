@@ -91,9 +91,9 @@ The plugin includes a publish service for incremental before/after publishing.
 
 ### Incremental behavior
 
-The service tracks a hash of each photo's develop settings. On republish:
-- **After** images are always re-exported (metadata may have changed)
-- **Before** images are only re-exported when develop settings actually change
+On each publish:
+- **After** images are always re-exported
+- **Before** images are re-exported on first publish and on every republish (including **Mark for Republish** and metadata edits). Before is skipped only on the rare first-publish path where develop settings haven't changed since the hash was recorded.
 
 ### Deleting
 

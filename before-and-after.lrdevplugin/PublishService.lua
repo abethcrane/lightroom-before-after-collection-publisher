@@ -239,8 +239,11 @@ function provider.processRenderedPhotos(functionContext, exportContext)
             local newHash = computeSettingsHash(currentSettings)
 
             local previousRemoteId = rendition.publishedPhotoId
+            local isRepublish = previousRemoteId ~= nil
             local _, oldHash = decodeRemoteId(previousRemoteId)
-            local needsBefore = (oldHash == nil) or (oldHash ~= newHash)
+            -- Always re-export before on republish (including LR's "Mark for Republish").
+            -- Develop-only skip applied only on first publish when hash is already known.
+            local needsBefore = isRepublish or (oldHash == nil) or (oldHash ~= newHash)
 
             local afterPath = LrPathUtils.child(afterFolder, filename)
             if LrFileUtils.exists(afterPath) then LrFileUtils.delete(afterPath) end
@@ -312,7 +315,7 @@ function provider.processRenderedPhotos(functionContext, exportContext)
 
                 end -- resetPreset else block
             else
-                logger:info("Metadata-only change, skipping before for " .. photoName)
+                logger:info("Skipping before for " .. photoName .. " (first publish, develop unchanged)")
             end
 
             rendition:recordPublishedPhotoId(encodeRemoteId(filename, newHash))
