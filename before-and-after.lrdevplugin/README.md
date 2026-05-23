@@ -49,9 +49,11 @@ For ongoing workflows — add photos to a publish collection and re-export when 
    - **Metadata validation** — optionally require title, camera model, and a specific creator
 4. Add photos to the default **Photos** collection and click **Publish**
 
-**Incremental behavior** — on each publish:
-- **After** images are always re-exported
-- **Before** images are re-exported on first publish and on every republish (including **Mark for Republish** and metadata edits). Before is skipped only on the rare first-publish path where develop settings haven't changed since the hash was recorded.
+**Incremental behavior** — whenever Lightroom queues a photo for publish (first publish, develop edits, metadata edits, or **Mark for Republish**):
+- **After** is always re-exported
+- **Before** is always re-exported too (same crop/geometry, reset tonal edits)
+
+Metadata-only republish still re-renders Before — Lightroom does not expose which trigger queued the photo, and **Mark for Republish** must refresh Before even when develop settings are unchanged.
 
 **Deleting** — remove a photo from the published collection, then click **Publish**. That sync deletes both the after and before files from disk (Lightroom stages deletions until you publish, same as other publish services).
 
@@ -134,8 +136,7 @@ Logs go to Lightroom's plugin log:
 
 ## Roadmap
 
-- [x] Publish service provider (auto-republish when edits change)
-- [ ] Integration with Jeffrey Friedl's Collection Publisher
 - [ ] Subfolder mode (before/ and after/ subdirectories instead of suffixes)
 - [ ] Configurable "before" definition (choose which settings to preserve)
-- [ ] Batch progress with per-photo thumbnails
+- [ ] Configurable before re-export (skip when develop settings unchanged, instead of always re-rendering)
+- [ ] More reliable publish "up to date" status (photos sometimes stay flagged for republish after the before restore)

@@ -231,80 +231,68 @@ function provider.processRenderedPhotos(functionContext, exportContext)
             local currentSettings = photo:getDevelopSettings()
             local newHash = computeSettingsHash(currentSettings)
 
-            local previousRemoteId = rendition.publishedPhotoId
-            local isRepublish = previousRemoteId ~= nil
-            local _, oldHash = decodeRemoteId(previousRemoteId)
-            -- Always re-export before on republish (including LR's "Mark for Republish").
-            -- Develop-only skip applied only on first publish when hash is already known.
-            local needsBefore = isRepublish or (oldHash == nil) or (oldHash ~= newHash)
-
             local afterPath = LrPathUtils.child(afterFolder, filename)
             if LrFileUtils.exists(afterPath) then LrFileUtils.delete(afterPath) end
             LrFileUtils.move(pathOrMsg, afterPath)
             logger:info("publish-after " .. photoName .. ": wrote " .. afterPath)
 
-            if needsBefore then
-                logger:info("Develop settings changed, exporting before for " .. photoName)
+            logger:info("Exporting before for " .. photoName)
 
-                local expectedHash = newHash
-                local snapshotId = BeforeAfterExport.createSafetySnapshot(catalog, photo)
-                if not snapshotId then
-                    logger:warn("Could not resolve safety snapshot id for " .. photoName)
-                end
-
-                CatalogWrite.runWithWriteAccess(catalog, "Apply reset preset for before export", function()
-                    photo:applyDevelopPreset(resetPreset)
-                end)
-
-                local beforeExportParams = {
-                    LR_export_destinationType = "specificFolder",
-                    LR_export_destinationPathPrefix = beforeFolder,
-                    LR_export_useSubfolder = false,
-                    LR_format = publishSettings.LR_format or "JPEG",
-                    LR_jpeg_quality = publishSettings.LR_jpeg_quality or 1,
-                    LR_export_colorSpace = publishSettings.LR_export_colorSpace or "sRGB",
-                    LR_size_doConstrain = publishSettings.LR_size_doConstrain or false,
-                    LR_size_maxHeight = publishSettings.LR_size_maxHeight or 9999,
-                    LR_size_maxWidth = publishSettings.LR_size_maxWidth or 9999,
-                    LR_size_resizeType = publishSettings.LR_size_resizeType or "longEdge",
-                    LR_collisionHandling = "overwrite",
-                    LR_export_bitDepth = publishSettings.LR_export_bitDepth or 8,
-                    LR_reimportExportedPhoto = false,
-                    LR_outputSharpeningOn = publishSettings.LR_outputSharpeningOn or false,
-                    LR_useWatermark = false,
-                }
-
-                local beforeSession = LrExportSession({ photosToExport = { photo }, exportSettings = beforeExportParams })
-                for _, bRendition in beforeSession:renditions() do
-                    local bSuccess, bPath = bRendition:waitForRender()
-                    if bSuccess then
-                        local beforePath = LrPathUtils.child(beforeFolder, filename)
-                        if bPath ~= beforePath then
-                            if LrFileUtils.exists(beforePath) then LrFileUtils.delete(beforePath) end
-                            LrFileUtils.move(bPath, beforePath)
-                        end
-                        logger:info("publish-before " .. photoName .. ": wrote " .. beforePath)
-                    else
-                        logger:error("Before render failed for " .. photoName .. ": " .. tostring(bPath))
-                    end
-                end
-
-                if LrTasks.canYield() then
-                    LrTasks.sleep(0.5)
-                end
-
-                local restoreOk = BeforeAfterExport.restoreAfterBeforeExport(
-                    catalog, photo, snapshotId, currentSettings, expectedHash, photoName,
-                    "Before & After Publish", { suppressDialog = true }
-                )
-                if not restoreOk then
-                    table.insert(restoreFailures, photo)
-                end
-                newHash = restoreOk and expectedHash or computeSettingsHash(photo:getDevelopSettings())
-
-            else
-                logger:info("Skipping before for " .. photoName .. " (first publish, develop unchanged)")
+            local expectedHash = newHash
+            local snapshotId = BeforeAfterExport.createSafetySnapshot(catalog, photo)
+            if not snapshotId then
+                logger:warn("Could not resolve safety snapshot id for " .. photoName)
             end
+
+            CatalogWrite.runWithWriteAccess(catalog, "Apply reset preset for before export", function()
+                photo:applyDevelopPreset(resetPreset)
+            end)
+
+            local beforeExportParams = {
+                LR_export_destinationType = "specificFolder",
+                LR_export_destinationPathPrefix = beforeFolder,
+                LR_export_useSubfolder = false,
+                LR_format = publishSettings.LR_format or "JPEG",
+                LR_jpeg_quality = publishSettings.LR_jpeg_quality or 1,
+                LR_export_colorSpace = publishSettings.LR_export_colorSpace or "sRGB",
+                LR_size_doConstrain = publishSettings.LR_size_doConstrain or false,
+                LR_size_maxHeight = publishSettings.LR_size_maxHeight or 9999,
+                LR_size_maxWidth = publishSettings.LR_size_maxWidth or 9999,
+                LR_size_resizeType = publishSettings.LR_size_resizeType or "longEdge",
+                LR_collisionHandling = "overwrite",
+                LR_export_bitDepth = publishSettings.LR_export_bitDepth or 8,
+                LR_reimportExportedPhoto = false,
+                LR_outputSharpeningOn = publishSettings.LR_outputSharpeningOn or false,
+                LR_useWatermark = false,
+            }
+
+            local beforeSession = LrExportSession({ photosToExport = { photo }, exportSettings = beforeExportParams })
+            for _, bRendition in beforeSession:renditions() do
+                local bSuccess, bPath = bRendition:waitForRender()
+                if bSuccess then
+                    local beforePath = LrPathUtils.child(beforeFolder, filename)
+                    if bPath ~= beforePath then
+                        if LrFileUtils.exists(beforePath) then LrFileUtils.delete(beforePath) end
+                        LrFileUtils.move(bPath, beforePath)
+                    end
+                    logger:info("publish-before " .. photoName .. ": wrote " .. beforePath)
+                else
+                    logger:error("Before render failed for " .. photoName .. ": " .. tostring(bPath))
+                end
+            end
+
+            if LrTasks.canYield() then
+                LrTasks.sleep(0.5)
+            end
+
+            local restoreOk = BeforeAfterExport.restoreAfterBeforeExport(
+                catalog, photo, snapshotId, currentSettings, expectedHash, photoName,
+                "Before & After Publish", { suppressDialog = true }
+            )
+            if not restoreOk then
+                table.insert(restoreFailures, photo)
+            end
+            newHash = restoreOk and expectedHash or computeSettingsHash(photo:getDevelopSettings())
 
             rendition:recordPublishedPhotoId(encodeRemoteId(filename, newHash))
             rendition:recordPublishedPhotoUrl(afterPath)
