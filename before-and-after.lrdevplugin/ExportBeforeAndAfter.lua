@@ -184,6 +184,51 @@ local function showExportDialog()
     return options
 end
 
+local function runExport(photos, options)
+    LrTasks.startAsyncTask(function()
+        LrTasks.yield()
+        logger:info("BeforeAfterExport async task canYield=" .. tostring(LrTasks.canYield()))
+
+        local progressScope = LrProgressScope({
+            title = "Exporting Before & After (" .. #photos .. " photos)",
+        })
+
+        local ok, results = LrTasks.pcall(function()
+            return BeforeAfterExport.processPhotos(photos, options, progressScope)
+        end)
+
+        progressScope:done()
+
+        if not ok then
+            LrDialogs.message("Export failed", tostring(results), "critical")
+            return
+        end
+
+        local errorCount = #results.errors
+        local successCount = #results.after
+
+        if errorCount > 0 then
+            local errorList = {}
+            for _, e in ipairs(results.errors) do
+                table.insert(errorList, e.photo .. ": " .. e.error)
+            end
+            LrDialogs.message(
+                "Export completed with errors",
+                successCount .. " photos exported successfully.\n" ..
+                errorCount .. " photos had errors:\n\n" ..
+                table.concat(errorList, "\n"),
+                "warning"
+            )
+        elseif successCount > 0 then
+            LrDialogs.message(
+                "Export complete",
+                successCount .. " photo(s) exported to:\n" .. options.destPath,
+                "info"
+            )
+        end
+    end, "BeforeAfterExport")
+end
+
 local catalog = LrApplication.activeCatalog()
 local photos = catalog:getTargetPhotos()
 
@@ -203,31 +248,4 @@ if not LrFileUtils.exists(options.destPath) then
     LrFileUtils.createAllDirectories(options.destPath)
 end
 
-LrFunctionContext.postAsyncTaskWithContext("BeforeAfterExport", function(context)
-    LrDialogs.attachErrorDialogToFunctionContext(context)
-
-    local progressScope = LrProgressScope({
-        title = "Exporting Before & After (" .. #photos .. " photos)",
-        functionContext = context,
-    })
-
-    local results = BeforeAfterExport.processPhotos(photos, options, progressScope)
-    progressScope:done()
-
-    local errorCount = #results.errors
-    local successCount = #results.after
-
-    if errorCount > 0 then
-        local errorList = {}
-        for _, e in ipairs(results.errors) do
-            table.insert(errorList, e.photo .. ": " .. e.error)
-        end
-        LrDialogs.message(
-            "Export completed with errors",
-            successCount .. " photos exported successfully.\n" ..
-            errorCount .. " photos had errors:\n\n" ..
-            table.concat(errorList, "\n"),
-            "warning"
-        )
-    end
-end)
+runExport(photos, options)

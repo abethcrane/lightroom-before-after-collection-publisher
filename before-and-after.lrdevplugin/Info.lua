@@ -4,6 +4,7 @@ return {
 
     LrToolkitIdentifier = "com.beforeandafter.export",
     LrPluginName = "Before and After Export",
+    LrPluginInfoUrl = "https://github.com/abethcrane/lightroom-before-after-collection-publisher",
 
     LrPluginInfoProvider = "PluginInfoProvider.lua",
 
@@ -39,5 +40,5 @@ return {
         id = "beforeandafter",
     },
 
-    VERSION = { major = 1, minor = 0, revision = 0, display = "1.0.0" },
+    VERSION = { major = 1, minor = 0, revision = 3, display = "1.0.3" },
 }

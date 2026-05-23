@@ -197,7 +197,10 @@ local function exportSinglePhoto(photo, exportParams, progressScope)
     })
 
     local renderedPaths = {}
-    for _, rendition in session:renditions({ stopIfCanceled = true }) do
+    for _, rendition in session:renditions({
+        stopIfCanceled = true,
+        progressScope = progressScope,
+    }) do
         local success, pathOrMsg = rendition:waitForRender()
         if progressScope and progressScope:isCanceled() then
             LrErrors.throwCanceled()

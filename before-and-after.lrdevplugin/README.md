@@ -10,7 +10,7 @@ This matches what Lightroom shows in its Before/After view (in the common case o
 ## Requirements
 
 - Lightroom Classic v6+ (SDK 5.0+)
-- Tested on Lightroom Classic 14–15
+- Tested on **Lightroom Classic 15**
 - **Required:** develop preset **Reset For Before** (included in `presets/` at repo root)
 
 ## Install
@@ -23,14 +23,69 @@ Install the develop preset first, then the plugin. See the [root README](../READ
 
 ## Usage
 
+### Ad-hoc export
+
+For one-off batches — pick a folder, export, done.
+
 1. Select one or more photos in the Library module
-2. Go to **File > Plug-in Extras > Export Before & After**
-3. Configure output settings (destination, format, quality, suffixes)
+2. **File → Plug-in Extras → Export Before and After** (also under **File → Export**)
+3. Configure destination, format, quality, and `-before`/`-after` suffixes
 4. Click **Export**
 
 For each photo `IMG_1234.CR3`, you'll get:
 - `IMG_1234-after.jpg` — full edit
 - `IMG_1234-before.jpg` — geometry only, defaults for everything else
+
+### Publish service
+
+For ongoing workflows — add photos to a publish collection and re-export when edits or metadata change.
+
+1. **File → Plug-in Manager** → find **Before and After Export**
+2. In the Library, click **+** next to **Publish Services** → **Before & After Publish**
+3. Configure:
+   - **After folder** — where edited images are published
+   - **Before folder** — where "before" versions are published
+   - **Metadata validation** — optionally require title, camera model, and a specific creator
+4. Add photos to the default **Photos** collection and click **Publish**
+
+**Incremental behavior** — on each publish:
+- **After** images are always re-exported
+- **Before** images are re-exported on first publish and on every republish (including **Mark for Republish** and metadata edits). Before is skipped only on the rare first-publish path where develop settings haven't changed since the hash was recorded.
+
+**Deleting** — remove a photo from the published collection, then click **Publish**. That sync deletes both the after and before files from disk (Lightroom stages deletions until you publish, same as other publish services).
+
+**Go to published file** — right-click a published photo → **Go to Published Before** / **Go to Published After** (also under Plug-in Extras).
+
+## Before & After collections
+
+The plugin maintains a collection set named **Before & After** in your catalog with helper collections for problem photos. Both are created automatically when needed.
+
+### Metadata Issues
+
+Photos flagged for missing or wrong metadata land here.
+
+Populated when:
+- You run **Library → Plug-in Extras → Audit Metadata** on a source or selection
+- You publish with **Metadata validation** enabled and choose **Publish Anyway** despite warnings
+
+Checks (when configured):
+- Missing title
+- Missing camera model
+- Creator doesn't match the **Required creator** value from your publish service settings
+
+Each audit run replaces the collection contents with the latest results and saves a timestamped report to:
+- **macOS:** `~/Documents/Before and After Export/reports/`
+- **Windows:** `%USERPROFILE%\Documents\Before and After Export\reports\`
+
+### Restore Failures
+
+Photos whose develop settings could not be fully restored after generating the "before" export.
+
+Populated when:
+- Ad-hoc export fails to restore settings after the before render
+- Publish service fails to restore settings after the before render
+
+If a photo ends up here, it may still look like the "before" version in Develop. Fix it with **Undo**, or apply the **Before-After Backup** snapshot (Develop → Snapshots).
 
 ## What "Before" Means
 
@@ -60,7 +115,7 @@ Before modifying any photo's develop settings, the plugin:
 2. Creates a develop snapshot named **"Before-After Backup"**
 3. Restores original settings after export
 
-If something goes wrong (crash, etc.), you can manually restore from the snapshot in Develop > Snapshots.
+If something goes wrong (crash, etc.), you can manually restore from the snapshot in Develop → Snapshots.
 
 ## Limitations
 
@@ -75,43 +130,6 @@ Logs go to Lightroom's plugin log:
 
 - **macOS:** `~/Library/Application Support/Adobe/Lightroom/`
 - **Windows:** `%APPDATA%\Adobe\Lightroom\`
-
-## Publish Service
-
-The plugin includes a publish service for incremental before/after publishing.
-
-### Setup
-
-1. Go to **File > Plug-in Manager**, find "Before and After Export"
-2. In the Library module, click **+** next to **Publish Services** and choose **Before & After Publish**
-3. Configure:
-   - **After folder** — where edited images are published
-   - **Before folder** — where "before" versions are published
-   - **Metadata validation** — optionally require title, camera model, and a specific creator
-4. Add photos to the default "Photos" collection and click **Publish**
-
-### Incremental behavior
-
-On each publish:
-- **After** images are always re-exported
-- **Before** images are re-exported on first publish and on every republish (including **Mark for Republish** and metadata edits). Before is skipped only on the rare first-publish path where develop settings haven't changed since the hash was recorded.
-
-### Deleting
-
-Removing a photo from the published collection deletes both the after and before files from disk.
-
-## Audit Metadata
-
-**Library > Plug-in Extras > Audit Metadata** scans photos from the active source (or current selection) and flags metadata issues:
-
-- Missing title
-- Missing camera model
-- Wrong/missing creator (pulls the required value from your publish service settings, if configured)
-
-Flagged photos are collected into **Before & After > Metadata Issues**. Reports are saved to:
-
-- **macOS:** `~/Documents/Before and After Export/reports/`
-- **Windows:** `%USERPROFILE%\Documents\Before and After Export\reports\`
 
 ## Roadmap
 
