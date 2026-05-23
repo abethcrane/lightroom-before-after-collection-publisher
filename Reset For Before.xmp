@@ -17,6 +17,7 @@
    crs:ContactInfo=""
    crs:Version="11.3"
    crs:WhiteBalance="As Shot"
+   crs:ConvertToGrayscale="False"
    crs:Saturation="0"
    crs:Sharpness="40"
    crs:LuminanceSmoothing="0"
