@@ -45,7 +45,9 @@ Two workflows — see [before-and-after.lrdevplugin/README.md](before-and-after.
 
 ### Ad-hoc export
 
-Select photos → **File → Plug-in Extras → Export Before and After** → pick a folder → export `-before`/`-after` pairs.
+Select photos → **File → Plug-in Extras → Export Before and After** → in the Export dialog choose **Before and After Export** as the destination → export `-before`/`-after` pairs to your chosen folder.
+
+Or use **File → Export** directly and pick **Before and After Export** there.
 
 ### Publish service
 

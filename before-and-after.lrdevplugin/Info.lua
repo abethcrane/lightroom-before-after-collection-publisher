@@ -35,10 +35,16 @@ return {
     },
 
     LrExportServiceProvider = {
-        title = "Before and After Publish",
-        file = "PublishService.lua",
-        id = "beforeandafter",
+        {
+            title = "Before and After Export",
+            file = "ExportService.lua",
+        },
+        {
+            title = "Before and After Publish",
+            file = "PublishService.lua",
+            id = "beforeandafter",
+        },
     },
 
-    VERSION = { major = 1, minor = 0, revision = 3, display = "1.0.3" },
+    VERSION = { major = 1, minor = 1, revision = 2, display = "1.1.2" },
 }

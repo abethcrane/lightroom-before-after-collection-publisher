@@ -25,12 +25,13 @@ Install the develop preset first, then the plugin. See the [root README](../READ
 
 ### Ad-hoc export
 
-For one-off batches — pick a folder, export, done.
+Lightroom Classic 15 requires exports to run through an export service (a plain menu async task is not enough).
 
-1. Select one or more photos in the Library module
-2. **File → Plug-in Extras → Export Before and After** (also under **File → Export**)
-3. Configure destination, format, quality, and `-before`/`-after` suffixes
-4. Click **Export**
+1. Select photos in the Library
+2. **File → Plug-in Extras → Export Before and After** (or **File → Export → Export Before and After**) — opens the Export dialog
+3. Choose **Before and After Export** as the export destination (top of the dialog)
+4. Set folder, format, sizing, and `-before`/`-after` suffixes
+5. Click **Export**
 
 For each photo `IMG_1234.CR3`, you'll get:
 - `IMG_1234-after.jpg` — full edit
