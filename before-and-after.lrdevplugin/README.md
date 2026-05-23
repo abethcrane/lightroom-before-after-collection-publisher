@@ -7,18 +7,19 @@ Exports two versions of each selected photo:
 
 This matches what Lightroom shows in its Before/After view (in the common case of no import presets).
 
+## Requirements
+
+- Lightroom Classic v6+ (SDK 5.0+)
+- Tested on Lightroom Classic 14–15
+- **Required:** develop preset **Reset For Before** (included in `presets/` at repo root)
+
 ## Install
 
-1. Copy (or symlink) the `before-and-after.lrplugin` folder to your Lightroom plugins directory:
-   - **macOS:** `~/Library/Application Support/Adobe/Lightroom/Modules/`
-   - Or use File > Plug-in Manager > Add and point to the `.lrplugin` folder
-2. Restart Lightroom Classic (or click "Reload Plug-in" in the Plug-in Manager)
+Install the develop preset first, then the plugin. See the [root README](../README.md) for full paths on macOS and Windows.
 
-For development, symlink is easiest:
-
-```bash
-ln -s /path/to/before-and-after.lrplugin ~/Library/Application\ Support/Adobe/Lightroom/Modules/
-```
+1. Import `presets/Reset For Before.xmp` via Develop → Presets → Import
+2. Add `before-and-after.lrdevplugin/` via File → Plug-in Manager → Add
+3. Reload the plugin or restart Lightroom
 
 ## Usage
 
@@ -41,7 +42,7 @@ The "before" version preserves:
 - **Perspective/transform corrections** (Upright, manual perspective)
 - **Camera profile & process version**
 
-Everything else is reset to Lightroom defaults:
+Everything else is reset via the **Reset For Before** develop preset:
 
 - White balance → As Shot (camera original)
 - Exposure, contrast, highlights, shadows → 0
@@ -63,17 +64,17 @@ If something goes wrong (crash, etc.), you can manually restore from the snapsho
 
 ## Limitations
 
-- **No SDK access to LR's internal "Before" state.** If you've manually set a custom Before via the History panel or snapshots, this plugin won't know about it. It constructs "before" from known defaults + your geometry.
+- **No SDK access to LR's internal "Before" state.** If you've manually set a custom Before via the History panel or snapshots, this plugin won't know about it. It constructs "before" from the Reset For Before preset + your geometry.
 - **Import presets not accounted for.** If you applied a develop preset during import, LR's Before/After shows that preset as the baseline. This plugin uses Adobe defaults instead.
-- **Settings API is "experimental"** per Adobe. The `getDevelopSettings`/`applyDevelopSettings` APIs have been stable for 10+ years but Adobe reserves the right to change them. New develop features (e.g., AI masking) may add settings keys not in our defaults table.
+- **Settings API is "experimental"** per Adobe. The `getDevelopSettings`/`applyDevelopSettings` APIs have been stable for 10+ years but Adobe reserves the right to change them. New develop features (e.g., AI masking) may add settings keys not covered by the preset.
 - **Sequential processing.** Each photo requires two renders (after + before), so large batches will take a while.
 
 ## Debugging
 
-Logs go to Lightroom's plugin log. Enable the log console:
+Logs go to Lightroom's plugin log:
 
-1. Open `~/Library/Application Support/Adobe/Lightroom/` (macOS) or `%APPDATA%\Adobe\Lightroom\` (Windows)
-2. Look for log files, or use Lightroom's built-in debug console
+- **macOS:** `~/Library/Application Support/Adobe/Lightroom/`
+- **Windows:** `%APPDATA%\Adobe\Lightroom\`
 
 ## Publish Service
 
@@ -107,7 +108,10 @@ Removing a photo from the published collection deletes both the after and before
 - Missing camera model
 - Wrong/missing creator (pulls the required value from your publish service settings, if configured)
 
-Flagged photos are collected into **Before & After > Metadata Issues** and a timestamped report is saved under `reports/` in the plugin directory.
+Flagged photos are collected into **Before & After > Metadata Issues**. Reports are saved to:
+
+- **macOS:** `~/Documents/Before and After Export/reports/`
+- **Windows:** `%USERPROFILE%\Documents\Before and After Export\reports\`
 
 ## Roadmap
 
@@ -116,8 +120,3 @@ Flagged photos are collected into **Before & After > Metadata Issues** and a tim
 - [ ] Subfolder mode (before/ and after/ subdirectories instead of suffixes)
 - [ ] Configurable "before" definition (choose which settings to preserve)
 - [ ] Batch progress with per-photo thumbnails
-
-## Requirements
-
-- Lightroom Classic v6+ (SDK 5.0+)
-- Tested on Lightroom Classic v14 (2024/2025)

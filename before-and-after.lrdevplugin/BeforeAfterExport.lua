@@ -9,25 +9,13 @@ local LrTasks = import "LrTasks"
 
 local AuditCollections = require "AuditCollections"
 local CatalogWrite = require "CatalogWrite"
+local ResetPreset = require "ResetPreset"
 
 local logger = LrLogger("BeforeAfterExport")
 logger:enable("logfile")
 logger:enable("print")
 
-local RESET_PRESET_NAME = "Reset For Before"
 local SNAPSHOT_NAME = "Before-After Backup"
-
-local function findResetPreset()
-    local folders = LrApplication.developPresetFolders()
-    for _, folder in ipairs(folders) do
-        for _, preset in ipairs(folder:getDevelopPresets()) do
-            if preset:getName() == RESET_PRESET_NAME then
-                return preset
-            end
-        end
-    end
-    return nil
-end
 
 local BeforeAfterExport = {}
 
@@ -229,14 +217,9 @@ function BeforeAfterExport.processPhotos(photos, options, progressScope)
     local results = { after = {}, before = {}, errors = {} }
     local total = #photos
 
-    local resetPreset = findResetPreset()
+    local resetPreset = ResetPreset.find()
     if not resetPreset then
-        LrDialogs.message(
-            "Export Before & After",
-            "Could not find a develop preset named '" .. RESET_PRESET_NAME ..
-                "'. Please install one to use as the 'before' baseline.",
-            "critical"
-        )
+        LrDialogs.message("Export Before & After", ResetPreset.missingMessage(), "critical")
         return results
     end
 

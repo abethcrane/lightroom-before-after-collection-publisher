@@ -1,0 +1,12 @@
+.DS_Store
+.cursor/
+
+# Adobe SDK — download separately from Adobe; do not commit
+LrC_*/
+Lightroom Classic SDK Guide.pdf
+
+# Local audit reports (now written to ~/Documents)
+before-and-after.lrdevplugin/reports/*.txt
+
+# Release builds
+dist/

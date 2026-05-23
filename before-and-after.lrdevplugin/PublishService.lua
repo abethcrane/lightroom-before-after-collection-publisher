@@ -10,25 +10,12 @@ local LrView = import "LrView"
 local AuditCollections = require "AuditCollections"
 local BeforeAfterExport = require "BeforeAfterExport"
 local CatalogWrite = require "CatalogWrite"
+local ResetPreset = require "ResetPreset"
 local RevealPublished = require "RevealPublished"
 
 local logger = LrLogger("BeforeAfterPublish")
 logger:enable("logfile")
 logger:enable("print")
-
-local RESET_PRESET_NAME = "Reset For Before"
-
-local function findResetPreset()
-    local folders = LrApplication.developPresetFolders()
-    for _, folder in ipairs(folders) do
-        for _, preset in ipairs(folder:getDevelopPresets()) do
-            if preset:getName() == RESET_PRESET_NAME then
-                return preset
-            end
-        end
-    end
-    return nil
-end
 
 local provider = {}
 
@@ -180,6 +167,12 @@ function provider.processRenderedPhotos(functionContext, exportContext)
         end
     end
 
+    local resetPreset = ResetPreset.find()
+    if not resetPreset then
+        LrDialogs.message("Before & After Publish", ResetPreset.missingMessage(), "critical")
+        return
+    end
+
     if publishSettings.validateMetadata then
         local allIssues = {}
         local flaggedPhotos = {}
@@ -253,10 +246,6 @@ function provider.processRenderedPhotos(functionContext, exportContext)
             if needsBefore then
                 logger:info("Develop settings changed, exporting before for " .. photoName)
 
-                local resetPreset = findResetPreset()
-                if not resetPreset then
-                    logger:error("Could not find '" .. RESET_PRESET_NAME .. "' develop preset — skipping before for " .. photoName)
-                else
                 local expectedHash = newHash
                 local snapshotId = BeforeAfterExport.createSafetySnapshot(catalog, photo)
                 if not snapshotId then
@@ -313,7 +302,6 @@ function provider.processRenderedPhotos(functionContext, exportContext)
                 end
                 newHash = restoreOk and expectedHash or computeSettingsHash(photo:getDevelopSettings())
 
-                end -- resetPreset else block
             else
                 logger:info("Skipping before for " .. photoName .. " (first publish, develop unchanged)")
             end
