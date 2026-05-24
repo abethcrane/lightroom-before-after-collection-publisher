@@ -80,20 +80,25 @@ function MarkUpToDate.run(options)
     options = options or {}
     local catalog = LrApplication.activeCatalog()
     local folderSettings = options.folderSettings
-    local entries
 
-    if options.publishService then
-        entries = RevealPublished.collectPublishedPhotoEntriesForService(catalog, options.publishService)
-    else
-        entries = RevealPublished.collectPublishedPhotoEntries(catalog, false)
+    local publishService = options.publishService
+        or RevealPublished.findPublishServiceForDialog(catalog, folderSettings)
+    if not publishService then
+        LrDialogs.message(
+            "Before & After Publish",
+            "No Before & After publish service found.\n\n"
+                .. "Add the publish service under Publish Services, then try again.",
+            "warning"
+        )
+        return
     end
 
+    local entries = RevealPublished.collectPublishedPhotoEntriesForService(catalog, publishService)
+
     if #entries == 0 then
-        local collections = options.publishService
-            and RevealPublished.getCollectionsForService(options.publishService)
-            or {}
+        local collections = RevealPublished.getCollectionsForService(publishService)
         local message
-        if options.publishService and #collections == 0 then
+        if #collections == 0 then
             message = "No publish collections found under this service.\n\n"
                 .. "Add a collection (or smart collection) under the service, then try again."
         else
