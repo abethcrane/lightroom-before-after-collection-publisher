@@ -15,6 +15,7 @@ local MarkUpToDate = require "MarkUpToDate"
 local MetadataValidation = require "MetadataValidation"
 local PublishPaths = require "PublishPaths"
 local PublishSync = require "PublishSync"
+local PublishSettingsCache = require "PublishSettingsCache"
 local ResetPreset = require "ResetPreset"
 local RevealPublished = require "RevealPublished"
 local SyncFromDisk = require "SyncFromDisk"
@@ -28,6 +29,7 @@ local provider = {}
 provider.titleForGoToPublishedPhoto = "Go to Published After"
 
 function provider.goToPublishedPhoto(publishSettings, info)
+    PublishSettingsCache.remember(nil, publishSettings)
     RevealPublished.revealPublishedSide(publishSettings, info.remoteId, "after")
 end
 
@@ -63,10 +65,13 @@ provider.allowColorSpaces = { "sRGB" }
 local computeSettingsHash = BeforeAfterExport.computeSettingsHash
 
 function provider.updateExportSettings(exportSettings)
+    PublishSettingsCache.remember(nil, exportSettings)
     SyncSettings.mergeCachedFolders(exportSettings)
 end
 
 function provider.sectionsForTopOfDialog(f, propertyTable)
+    PublishSettingsCache.remember(nil, propertyTable)
+
     return {
         {
             title = "Before & After Publish Settings",
@@ -78,7 +83,10 @@ function provider.sectionsForTopOfDialog(f, propertyTable)
                     title = "Browse...",
                     action = function()
                         local path = LrDialogs.runOpenPanel({ title = "Choose 'after' folder", canChooseFiles = false, canChooseDirectories = true, canCreateDirectories = true, allowsMultipleSelection = false })
-                        if path then propertyTable.afterFolder = path[1] end
+                        if path then
+                            propertyTable.afterFolder = path[1]
+                            PublishSettingsCache.remember(nil, propertyTable)
+                        end
                     end,
                 },
             },
@@ -89,7 +97,10 @@ function provider.sectionsForTopOfDialog(f, propertyTable)
                     title = "Browse...",
                     action = function()
                         local path = LrDialogs.runOpenPanel({ title = "Choose 'before' folder", canChooseFiles = false, canChooseDirectories = true, canCreateDirectories = true, allowsMultipleSelection = false })
-                        if path then propertyTable.beforeFolder = path[1] end
+                        if path then
+                            propertyTable.beforeFolder = path[1]
+                            PublishSettingsCache.remember(nil, propertyTable)
+                        end
                     end,
                 },
             },
@@ -139,6 +150,12 @@ function provider.processRenderedPhotos(functionContext, exportContext)
     end
 
     local publishSettings = PublishSync.resolvePublishSettings(exportContext)
+    local publishService = exportContext.publishService
+    if not publishService and exportContext.publishedCollection then
+        publishService = exportContext.publishedCollection:getService()
+    end
+    PublishSettingsCache.remember(publishService, publishSettings)
+
     local catalog = LrApplication.activeCatalog()
 
     local afterFolder = publishSettings and publishSettings.afterFolder

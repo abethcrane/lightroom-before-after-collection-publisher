@@ -8,6 +8,7 @@ local BeforeAfterExport = require "BeforeAfterExport"
 local PublishPaths = require "PublishPaths"
 local RevealPublished = require "RevealPublished"
 local SyncFromDisk = require "SyncFromDisk"
+local PublishSettingsCache = require "PublishSettingsCache"
 
 local logger = LrLogger("MarkUpToDate")
 logger:enable("logfile")
@@ -94,6 +95,7 @@ function MarkUpToDate.run(options)
     end
 
     local entries = RevealPublished.collectPublishedPhotoEntriesForService(catalog, publishService)
+    PublishSettingsCache.remember(publishService, folderSettings)
 
     if #entries == 0 then
         local collections = RevealPublished.getCollectionsForService(publishService)
@@ -214,6 +216,7 @@ function MarkUpToDate.run(options)
     end
 
     SyncFromDisk.begin(photoIds, diskInfoById, serviceSettings)
+    PublishSettingsCache.remember(publishService, serviceSettings)
 
     for _, collection in ipairs(collectionList) do
         local publishDoneRef = { done = false }

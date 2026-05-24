@@ -17,6 +17,9 @@ end
 local SyncFromDisk = {}
 
 function SyncFromDisk.begin(photoIds, diskInfoById, publishSettings)
+    local PublishSettingsCache = require "PublishSettingsCache"
+    PublishSettingsCache.remember(nil, publishSettings)
+
     state.active = true
     state.photoIds = photoIds or {}
     state.diskInfoById = diskInfoById or {}

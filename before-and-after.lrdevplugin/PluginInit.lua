@@ -28,3 +28,14 @@ if not ResetPreset.find() then
         LrDialogs.message("Before & After Export", ResetPreset.missingMessage(), "warning")
     end)
 end
+
+LrFunctionContext.postAsyncTaskWithContext("BeforeAfterCachePublishSettings", function()
+    local LrApplication = import "LrApplication"
+    local PublishSettingsCache = require "PublishSettingsCache"
+    local RevealPublished = require "RevealPublished"
+
+    local catalog = LrApplication.activeCatalog()
+    for _, service in ipairs(RevealPublished.findOurPublishServices(catalog)) do
+        PublishSettingsCache.remember(service, service:getPublishSettings())
+    end
+end)

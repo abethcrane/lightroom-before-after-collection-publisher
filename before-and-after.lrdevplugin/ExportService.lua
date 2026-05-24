@@ -13,6 +13,7 @@ local CatalogWrite = require "CatalogWrite"
 local ExportParams = require "ExportParams"
 local MetadataValidation = require "MetadataValidation"
 local PublishSync = require "PublishSync"
+local PublishSettingsCache = require "PublishSettingsCache"
 local ResetPreset = require "ResetPreset"
 local SyncFromDisk = require "SyncFromDisk"
 local SyncSettings = require "SyncSettings"
@@ -54,6 +55,7 @@ function provider.sectionsForTopOfDialog(f, propertyTable)
 end
 
 function provider.updateExportSettings(exportSettings)
+    PublishSettingsCache.remember(nil, exportSettings)
     SyncSettings.mergeCachedFolders(exportSettings)
 end
 
