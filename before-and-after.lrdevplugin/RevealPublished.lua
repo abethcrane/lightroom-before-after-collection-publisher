@@ -47,48 +47,12 @@ local function foldersConfigured(settings)
         and settings.beforeFolder and settings.beforeFolder ~= ""
 end
 
-local function mergeServiceFolderPaths(settings, serviceSettings)
-    if not serviceSettings then
-        return settings
-    end
-    if serviceSettings.afterFolder and serviceSettings.afterFolder ~= "" then
-        settings.afterFolder = serviceSettings.afterFolder
-    end
-    if serviceSettings.beforeFolder and serviceSettings.beforeFolder ~= "" then
-        settings.beforeFolder = serviceSettings.beforeFolder
-    end
-    return settings
-end
-
-local function fillFolderPathsFromOurServices(catalog, settings, service)
-    settings = PublishSettingsCache.getEffectiveSettings(settings, service)
-    if foldersConfigured(settings) then
-        return settings
-    end
-
-    for _, publishService in ipairs(M.findOurPublishServices(catalog)) do
-        settings = PublishSettingsCache.getEffectiveSettings(settings, publishService)
-        mergeServiceFolderPaths(settings, publishService:getPublishSettings())
-        if foldersConfigured(settings) then
-            PublishSettingsCache.remember(publishService, settings)
-            return settings
-        end
-    end
-
-    return settings
-end
-
 local function resolveCollectionSettings(collection, service)
     local serviceSettings = service and service:getPublishSettings() or {}
-    local settings = {}
+    local settings = PublishSettingsCache.getEffectiveSettings({}, service)
+
     for key, value in pairs(serviceSettings) do
         settings[key] = value
-    end
-    mergeServiceFolderPaths(settings, serviceSettings)
-
-    if foldersConfigured(settings) then
-        PublishSettingsCache.remember(service, settings)
-        return settings
     end
 
     if collection and type(collection.getCollectionInfoSummary) == "function" then
@@ -103,9 +67,7 @@ local function resolveCollectionSettings(collection, service)
         end
     end
 
-    mergeServiceFolderPaths(settings, serviceSettings)
-    PublishSettingsCache.remember(service, settings)
-    return settings
+    return PublishSettingsCache.getEffectiveSettings(settings, service)
 end
 
 local function appendCollectionsFromNode(node, collections, seen)
@@ -263,33 +225,57 @@ end
 
 local function findOurCollectionContext(collection, photo)
     if not M.isOurPublishedCollection(collection) or not photoInCollection(collection, photo) then
-        return nil, nil, nil
+        return nil
     end
 
     local publishService = collection:getService()
     if not publishService then
-        return nil, nil, nil
+        return nil
     end
 
-    return resolveCollectionSettings(collection, publishService),
-        findPublishedPhotoInCollection(collection, photo),
-        publishService
+    return {
+        settings = resolveCollectionSettings(collection, publishService),
+        publishedPhoto = findPublishedPhotoInCollection(collection, photo),
+        service = publishService,
+    }
 end
 
 local function findInPublishedTree(node, photo)
     for _, collection in ipairs(node:getChildCollections() or {}) do
-        local settings, publishedPhoto, service = findOurCollectionContext(collection, photo)
-        if settings ~= nil or publishedPhoto ~= nil then
-            return settings, publishedPhoto, service
+        local context = findOurCollectionContext(collection, photo)
+        if context then
+            return context
         end
     end
     for _, childSet in ipairs(node:getChildCollectionSets() or {}) do
-        local settings, publishedPhoto, service = findInPublishedTree(childSet, photo)
-        if settings ~= nil or publishedPhoto ~= nil then
-            return settings, publishedPhoto, service
+        local context = findInPublishedTree(childSet, photo)
+        if context then
+            return context
         end
     end
-    return nil, nil, nil
+    return nil
+end
+
+local function findOurPublishedPhoto(photo)
+    local pubs = photo:getContainedPublishedCollections()
+    if pubs then
+        for _, collection in ipairs(pubs) do
+            local context = findOurCollectionContext(collection, photo)
+            if context then
+                return context
+            end
+        end
+    end
+
+    local catalog = LrApplication.activeCatalog()
+    for _, publishService in ipairs(M.findOurPublishServices(catalog)) do
+        local context = findInPublishedTree(publishService, photo)
+        if context then
+            return context
+        end
+    end
+
+    return nil
 end
 
 local function revealFromPublishedPhoto(publishedPhoto, settings, service, side)
@@ -330,8 +316,9 @@ end
 
 --- @param side "after"|"before"
 function M.revealPublishedSide(publishSettings, remoteId, side)
+    local settings = PublishSettingsCache.getEffectiveSettings(publishSettings or {}, nil)
     local folderKey = side == "before" and "beforeFolder" or "afterFolder"
-    local root = publishSettings[folderKey]
+    local root = settings[folderKey]
     if not root or root == "" then
         LrDialogs.message(
             "Before & After Publish",
@@ -361,8 +348,9 @@ function M.revealPublishedSide(publishSettings, remoteId, side)
 end
 
 function M.revealPublishedSideForPhoto(publishSettings, photo, side)
+    local settings = PublishSettingsCache.getEffectiveSettings(publishSettings or {}, nil)
     local folderKey = side == "before" and "beforeFolder" or "afterFolder"
-    local root = publishSettings[folderKey]
+    local root = settings[folderKey]
     if not root or root == "" then
         LrDialogs.message(
             "Before & After Publish",
@@ -372,7 +360,7 @@ function M.revealPublishedSideForPhoto(publishSettings, photo, side)
         return
     end
 
-    local afterPath, beforePath, filename = PublishPaths.resolveExportedPair(publishSettings, photo)
+    local afterPath, beforePath, filename = PublishPaths.resolveExportedPair(settings, photo)
     local path = side == "before" and beforePath or afterPath
     if not path or not LrFileUtils.exists(path) then
         LrDialogs.message(
@@ -388,47 +376,20 @@ function M.revealPublishedSideForPhoto(publishSettings, photo, side)
     LrShell.revealInShell(path)
 end
 
-function M.findOurPublishedPhoto(photo)
-    local foundSettings = nil
-    local foundPublishedPhoto = nil
-    local foundService = nil
-
-    local pubs = photo:getContainedPublishedCollections()
-    if pubs then
-        for _, collection in ipairs(pubs) do
-            local settings, publishedPhoto, service = findOurCollectionContext(collection, photo)
-            if settings ~= nil or publishedPhoto ~= nil then
-                foundSettings = settings
-                foundPublishedPhoto = publishedPhoto
-                foundService = service
-                break
-            end
-        end
+function M.revealForPublishInfo(publishSettings, info, side)
+    PublishSettingsCache.remember(nil, publishSettings)
+    local publishedPhoto = info and info.publishedPhoto
+    if publishedPhoto and revealFromPublishedPhoto(publishedPhoto, publishSettings, nil, side) then
+        return
     end
-
-    if foundSettings == nil and foundPublishedPhoto == nil then
-        local catalog = LrApplication.activeCatalog()
-        for _, publishService in ipairs(M.findOurPublishServices(catalog)) do
-            local settings, publishedPhoto, service = findInPublishedTree(publishService, photo)
-            if settings ~= nil or publishedPhoto ~= nil then
-                foundSettings = settings
-                foundPublishedPhoto = publishedPhoto
-                foundService = service
-                break
-            end
-        end
+    if info and info.remoteId then
+        M.revealPublishedSide(publishSettings, info.remoteId, side)
     end
-
-    if foundSettings == nil and foundPublishedPhoto == nil then
-        return nil, nil, nil
-    end
-
-    return foundSettings or {}, foundPublishedPhoto, foundService
 end
 
 function M.revealForCatalogPhoto(photo, side)
-    local settings, publishedPhoto, service = M.findOurPublishedPhoto(photo)
-    if not settings then
+    local context = findOurPublishedPhoto(photo)
+    if not context then
         LrDialogs.message(
             "Before & After Publish",
             "This photo is not in any published collection from this plug-in.",
@@ -437,10 +398,9 @@ function M.revealForCatalogPhoto(photo, side)
         return
     end
 
-    local catalog = LrApplication.activeCatalog()
-    settings = fillFolderPathsFromOurServices(catalog, settings, service)
+    local settings = PublishSettingsCache.getEffectiveSettings(context.settings, context.service)
 
-    if revealFromPublishedPhoto(publishedPhoto, settings, service, side) then
+    if revealFromPublishedPhoto(context.publishedPhoto, settings, context.service, side) then
         return
     end
 

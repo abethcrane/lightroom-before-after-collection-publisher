@@ -8,10 +8,7 @@ local GLOBAL_KEY = "__BeforeAfterPublishSettingsCache"
 
 local cache = _G[GLOBAL_KEY]
 if not cache then
-    cache = {
-        byServiceId = {},
-        lastKnown = nil,
-    }
+    cache = { byServiceId = {} }
     _G[GLOBAL_KEY] = cache
 end
 
@@ -65,16 +62,21 @@ local function persistSnapshot(snapshot)
     if not snapshot then
         return
     end
+
+    local changed = prefs.afterFolder ~= snapshot.afterFolder
+        or prefs.beforeFolder ~= snapshot.beforeFolder
     cache.lastKnown = snapshot
     prefs.afterFolder = snapshot.afterFolder
     prefs.beforeFolder = snapshot.beforeFolder
     if snapshot.LR_format then
         prefs.LR_format = snapshot.LR_format
     end
-    logger:info(string.format(
-        "Remembered publish folders: after=%s before=%s",
-        snapshot.afterFolder, snapshot.beforeFolder
-    ))
+    if changed then
+        logger:info(string.format(
+            "Saved publish folders: after=%s before=%s",
+            snapshot.afterFolder, snapshot.beforeFolder
+        ))
+    end
 end
 
 function PublishSettingsCache.remember(service, settings)
@@ -87,10 +89,6 @@ function PublishSettingsCache.remember(service, settings)
     if service and service.localIdentifier then
         cache.byServiceId[service.localIdentifier] = snapshot
     end
-end
-
-function PublishSettingsCache.getLastKnown()
-    return cache.lastKnown or snapshotFromPrefs()
 end
 
 function PublishSettingsCache.getEffectiveSettings(base, service)
@@ -115,10 +113,6 @@ function PublishSettingsCache.getEffectiveSettings(base, service)
     end
 
     return base
-end
-
-function PublishSettingsCache.merge(settings, service)
-    return PublishSettingsCache.getEffectiveSettings(settings, service)
 end
 
 return PublishSettingsCache

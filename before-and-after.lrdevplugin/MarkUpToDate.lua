@@ -216,7 +216,6 @@ function MarkUpToDate.run(options)
     end
 
     SyncFromDisk.begin(photoIds, diskInfoById, serviceSettings)
-    PublishSettingsCache.remember(publishService, serviceSettings)
 
     for _, collection in ipairs(collectionList) do
         local publishDoneRef = { done = false }

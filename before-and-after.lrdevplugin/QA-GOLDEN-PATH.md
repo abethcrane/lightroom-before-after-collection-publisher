@@ -10,7 +10,7 @@ Manual regression checklist for Lightroom Classic. Run after plugin changes, bef
 
 ## Setup (once per test session)
 
-- [ ] Plug-in Manager shows expected version (currently **1.3.2+**)
+- [ ] Plug-in Manager shows expected version (currently **1.4.0+**)
 - [ ] **Reset For Before** preset visible under User Presets in Develop
 - [ ] Publish service exists: **Before & After Publish** with:
   - After folder (e.g. `…/synced-photos`)
@@ -152,6 +152,8 @@ On a **published** photo (with remote ID):
 
 - [ ] **Plug-in Extras → Go to Published After** → Finder reveals after file
 - [ ] **Plug-in Extras → Go to Published Before** → Finder reveals before file
+
+Folder paths are read from **LrPrefs** (saved when you click **Done** in Publish Manager, on publish, or on sync). If Go To fails with missing paths, open Publish Manager once and click **Done**.
 
 **Negative:** Unpublished / new-to-publish photo → sensible warning (no published remote ID).
 

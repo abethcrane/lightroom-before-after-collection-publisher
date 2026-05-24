@@ -29,8 +29,7 @@ local provider = {}
 provider.titleForGoToPublishedPhoto = "Go to Published After"
 
 function provider.goToPublishedPhoto(publishSettings, info)
-    PublishSettingsCache.remember(nil, publishSettings)
-    RevealPublished.revealPublishedSide(publishSettings, info.remoteId, "after")
+    RevealPublished.revealForPublishInfo(publishSettings, info, "after")
 end
 
 provider.small_icon = nil
@@ -70,8 +69,6 @@ function provider.updateExportSettings(exportSettings)
 end
 
 function provider.sectionsForTopOfDialog(f, propertyTable)
-    PublishSettingsCache.remember(nil, propertyTable)
-
     return {
         {
             title = "Before & After Publish Settings",
