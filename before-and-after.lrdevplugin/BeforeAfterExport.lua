@@ -10,7 +10,6 @@ local ResetPreset = require "ResetPreset"
 
 local logger = LrLogger("BeforeAfterExport")
 logger:enable("logfile")
-logger:enable("print")
 
 local SNAPSHOT_NAME = "Before-After Backup"
 

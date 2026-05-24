@@ -25,10 +25,6 @@ return {
             title = "Go to Published After",
             file = "GoToPublishedAfter.lua",
         },
-        {
-            title = "Mark Published as Up to Date",
-            file = "MarkPublishedUpToDate.lua",
-        },
     },
 
     LrExportMenuItems = {
@@ -40,15 +36,15 @@ return {
 
     LrExportServiceProvider = {
         {
-            title = "Before and After Export",
-            file = "ExportService.lua",
-        },
-        {
             title = "Before and After Publish",
             file = "PublishService.lua",
             id = "beforeandafter",
         },
+        {
+            title = "Before and After Export",
+            file = "ExportService.lua",
+        },
     },
 
-    VERSION = { major = 1, minor = 1, revision = 6, display = "1.1.6" },
+    VERSION = { major = 1, minor = 3, revision = 2, display = "1.3.2" },
 }

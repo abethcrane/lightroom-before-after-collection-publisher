@@ -12,9 +12,24 @@ local function exportedFilenameFromRemoteId(remoteId)
     return PublishPaths.decodeRemoteId(remoteId)
 end
 
+local function sameCollection(a, b)
+    if not a or not b then return false end
+    if a == b then return true end
+    if a.localIdentifier and b.localIdentifier then
+        return a.localIdentifier == b.localIdentifier
+    end
+    return false
+end
+
 function M.isOurPublishService(service)
-    if not service then return false end
+    if not service or type(service.getPluginId) ~= "function" then
+        return false
+    end
+
     local pid = service:getPluginId()
+    if not pid then
+        return false
+    end
     if pid == _PLUGIN.id then
         return true
     end
@@ -23,6 +38,9 @@ function M.isOurPublishService(service)
 end
 
 function M.isOurPublishedCollection(collection)
+    if not collection or type(collection.getService) ~= "function" then
+        return false
+    end
     return M.isOurPublishService(collection:getService())
 end
 
@@ -31,74 +49,235 @@ local function samePhoto(a, b)
     return a.localIdentifier == b.localIdentifier
 end
 
-local function addCollectionEntries(collection, entries)
-    if not M.isOurPublishedCollection(collection) then
-        return
+local function resolveCollectionSettings(collection, service)
+    local settings = service and service:getPublishSettings()
+    if settings and settings.afterFolder and settings.afterFolder ~= ""
+        and settings.beforeFolder and settings.beforeFolder ~= "" then
+        return settings
     end
-    local settings = collection:getService():getPublishSettings()
-    local publishedById = {}
-    for _, publishedPhoto in ipairs(collection:getPublishedPhotos()) do
-        local photo = publishedPhoto:getPhoto()
-        if photo then
-            publishedById[photo.localIdentifier] = publishedPhoto
+
+    local ok, summary = pcall(function()
+        return collection:getCollectionInfoSummary()
+    end)
+    if ok and summary then
+        if summary.publishSettings then
+            return summary.publishSettings
+        end
+        if summary.collectionSettings then
+            return summary.collectionSettings
         end
     end
 
-    local photosToScan = {}
-    if collection.getPhotos then
-        photosToScan = collection:getPhotos() or {}
+    return settings or {}
+end
+
+local function appendCollectionsFromNode(node, collections, seen)
+    for _, collection in ipairs(node:getChildCollections() or {}) do
+        if M.isOurPublishedCollection(collection) and not seen[collection] then
+            seen[collection] = true
+            collections[#collections + 1] = collection
+        end
     end
-    if #photosToScan == 0 then
-        for _, publishedPhoto in pairs(publishedById) do
-            local photo = publishedPhoto:getPhoto()
-            if photo then
-                photosToScan[#photosToScan + 1] = photo
+    for _, childSet in ipairs(node:getChildCollectionSets() or {}) do
+        appendCollectionsFromNode(childSet, collections, seen)
+    end
+end
+
+local function findOurPublishedCollections(catalog)
+    local collections = {}
+    local seen = {}
+    for _, service in ipairs(M.findOurPublishServices(catalog)) do
+        appendCollectionsFromNode(service, collections, seen)
+    end
+    return collections
+end
+
+function M.findOurPublishServices(catalog)
+    local ours = {}
+    local services = catalog:getPublishServices()
+    if not services or #services == 0 then
+        services = catalog:getPublishServices(_PLUGIN.id)
+    end
+    if services then
+        for _, service in ipairs(services) do
+            if M.isOurPublishService(service) then
+                ours[#ours + 1] = service
+            end
+        end
+    end
+    return ours
+end
+
+function M.findPublishServiceForDialog(catalog, propertyTable)
+    local ours = M.findOurPublishServices(catalog)
+    if #ours == 0 then
+        return nil
+    end
+    if #ours == 1 then
+        return ours[1]
+    end
+
+    local afterFolder = propertyTable and propertyTable.afterFolder
+    local beforeFolder = propertyTable and propertyTable.beforeFolder
+    if afterFolder and afterFolder ~= "" and beforeFolder and beforeFolder ~= "" then
+        for _, service in ipairs(ours) do
+            local saved = service:getPublishSettings()
+            if saved
+                and saved.afterFolder == afterFolder
+                and saved.beforeFolder == beforeFolder then
+                return service
             end
         end
     end
 
-    for _, photo in ipairs(photosToScan) do
-        local publishedPhoto = publishedById[photo.localIdentifier]
-        if publishedPhoto then
+    return ours[1]
+end
+
+function M.resolveTargetPublishedCollections(catalog, activeOnly)
+    local collections = {}
+    local seen = {}
+
+    for _, source in ipairs(catalog:getActiveSources() or {}) do
+        if M.isOurPublishedCollection(source) then
+            if not seen[source] then
+                seen[source] = true
+                collections[#collections + 1] = source
+            end
+        elseif M.isOurPublishService(source) then
+            appendCollectionsFromNode(source, collections, seen)
+        end
+    end
+
+    if activeOnly ~= false and #collections > 0 then
+        return collections
+    end
+
+    if #collections == 0 then
+        return findOurPublishedCollections(catalog)
+    end
+
+    return collections
+end
+
+local function photoBelongsToCollection(photo, collection)
+    local contained = photo:getContainedPublishedCollections()
+    if not contained then
+        return false
+    end
+    for _, pc in ipairs(contained) do
+        if sameCollection(pc, collection) then
+            return true
+        end
+    end
+    return false
+end
+
+local function addGridPhotosForCollection(catalog, collection, settings, entries, seen)
+    local targets = catalog:getTargetPhotos()
+    if not targets or #targets == 0 then
+        return 0
+    end
+
+    local added = 0
+    for _, photo in ipairs(targets) do
+        if photo and not seen[photo.localIdentifier] and photoBelongsToCollection(photo, collection) then
+            seen[photo.localIdentifier] = true
             entries[#entries + 1] = {
                 photo = photo,
-                publishedPhoto = publishedPhoto,
+                publishedPhoto = nil,
+                publishedCollection = collection,
+                settings = settings,
+            }
+            added = added + 1
+        end
+    end
+    return added
+end
+
+local function addCollectionEntries(catalog, collection, entries)
+    if not M.isOurPublishedCollection(collection) then
+        return
+    end
+
+    local service = collection:getService()
+    if not service then
+        return
+    end
+
+    local settings = resolveCollectionSettings(collection, service)
+    local seen = {}
+
+    local publishedByPhotoId = {}
+    for _, publishedPhoto in ipairs(collection:getPublishedPhotos() or {}) do
+        local photo = publishedPhoto:getPhoto()
+        if photo then
+            publishedByPhotoId[photo.localIdentifier] = publishedPhoto
+        end
+    end
+
+    local photos = {}
+    if type(collection.getPhotos) == "function" then
+        photos = collection:getPhotos() or {}
+    end
+
+    if #photos == 0 then
+        for _, publishedPhoto in ipairs(collection:getPublishedPhotos() or {}) do
+            local photo = publishedPhoto:getPhoto()
+            if photo and not seen[photo.localIdentifier] then
+                seen[photo.localIdentifier] = true
+                entries[#entries + 1] = {
+                    photo = photo,
+                    publishedPhoto = publishedPhoto,
+                    publishedCollection = collection,
+                    settings = settings,
+                }
+            end
+        end
+        addGridPhotosForCollection(catalog, collection, settings, entries, seen)
+        return
+    end
+
+    for _, photo in ipairs(photos) do
+        if photo and not seen[photo.localIdentifier] then
+            seen[photo.localIdentifier] = true
+            entries[#entries + 1] = {
+                photo = photo,
+                publishedPhoto = publishedByPhotoId[photo.localIdentifier],
+                publishedCollection = collection,
                 settings = settings,
             }
         end
     end
 end
 
-local function walkPublishedTree(node, entries)
-    for _, collection in ipairs(node:getChildCollections() or {}) do
-        addCollectionEntries(collection, entries)
+function M.getCollectionsForService(service)
+    local collections = {}
+    local seen = {}
+    if M.isOurPublishService(service) then
+        appendCollectionsFromNode(service, collections, seen)
     end
-    for _, childSet in ipairs(node:getChildCollectionSets() or {}) do
-        walkPublishedTree(childSet, entries)
+    return collections
+end
+
+function M.collectPublishedPhotoEntriesForService(catalog, service)
+    local entries = {}
+    if not M.isOurPublishService(service) then
+        return entries
     end
+
+    for _, collection in ipairs(M.getCollectionsForService(service)) do
+        addCollectionEntries(catalog, collection, entries)
+    end
+
+    return entries
 end
 
 function M.collectPublishedPhotoEntries(catalog, activeOnly)
     local entries = {}
+    local collections = M.resolveTargetPublishedCollections(catalog, activeOnly)
 
-    if activeOnly ~= false then
-        for _, source in ipairs(catalog:getActiveSources() or {}) do
-            if source.getPublishedPhotos then
-                addCollectionEntries(source, entries)
-            end
-        end
-        if #entries > 0 then
-            return entries
-        end
-    end
-
-    local services = catalog:getPublishServices(_PLUGIN.id)
-    if services then
-        for _, service in ipairs(services) do
-            if M.isOurPublishService(service) then
-                walkPublishedTree(service, entries)
-            end
-        end
+    for _, collection in ipairs(collections) do
+        addCollectionEntries(catalog, collection, entries)
     end
 
     return entries

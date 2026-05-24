@@ -49,6 +49,62 @@ local function photoBaseName(photo)
     return LrPathUtils.removeExtension(photo:getFormattedMetadata("fileName"))
 end
 
+function PublishPaths.buildFolderIndex(folder)
+    local index = {}
+    if not folder or folder == "" or not LrFileUtils.exists(folder) then
+        return index
+    end
+    for file in LrFileUtils.files(folder) do
+        index[file] = true
+    end
+    return index
+end
+
+function PublishPaths.findExportFileInIndex(folder, index, photo, ext)
+    local filename = PublishPaths.getExportFilename(photo, ext)
+    if index[filename] then
+        return LrPathUtils.child(folder, filename), filename
+    end
+
+    local baseName = photoBaseName(photo)
+    local suffix = "-" .. baseName .. "." .. ext
+    for file in pairs(index) do
+        if #file >= #suffix and file:sub(-#suffix) == suffix then
+            return LrPathUtils.child(folder, file), file
+        end
+    end
+
+    local plain = baseName .. "." .. ext
+    if index[plain] then
+        return LrPathUtils.child(folder, plain), plain
+    end
+
+    return nil, filename
+end
+
+function PublishPaths.resolveExportedPairWithIndex(publishSettings, photo, afterIndex, beforeIndex)
+    local ext = PublishPaths.getFileExtension(PublishPaths.getExportFormat(publishSettings))
+    local afterPath, afterName = PublishPaths.findExportFileInIndex(
+        publishSettings.afterFolder, afterIndex, photo, ext
+    )
+    if not afterPath then
+        return nil, nil, afterName
+    end
+
+    if beforeIndex[afterName] then
+        return afterPath, LrPathUtils.child(publishSettings.beforeFolder, afterName), afterName
+    end
+
+    local beforePath, beforeName = PublishPaths.findExportFileInIndex(
+        publishSettings.beforeFolder, beforeIndex, photo, ext
+    )
+    if beforePath then
+        return afterPath, beforePath, afterName
+    end
+
+    return nil, nil, afterName
+end
+
 function PublishPaths.findExportFileInFolder(folder, photo, ext)
     local filename = PublishPaths.getExportFilename(photo, ext)
     local exact = LrPathUtils.child(folder, filename)

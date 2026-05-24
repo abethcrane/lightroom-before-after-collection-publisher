@@ -10,7 +10,10 @@ local LrView = import "LrView"
 local AuditCollections = require "AuditCollections"
 local BeforeAfterExport = require "BeforeAfterExport"
 local CatalogWrite = require "CatalogWrite"
+local PublishSync = require "PublishSync"
 local ResetPreset = require "ResetPreset"
+local SyncFromDisk = require "SyncFromDisk"
+local SyncSettings = require "SyncSettings"
 
 local logger = LrLogger("BeforeAfterExportService")
 logger:enable("logfile")
@@ -72,9 +75,29 @@ local function buildBeforeExportParams(exportSettings, destDir, collisionMode)
     }
 end
 
+function provider.updateExportSettings(exportSettings)
+    SyncSettings.mergeCachedFolders(exportSettings)
+end
+
 function provider.processRenderedPhotos(functionContext, exportContext)
+    if not exportContext then
+        return
+    end
+
+    if exportContext.publishedCollection or exportContext.publishService then
+        if SyncFromDisk.isActive() then
+            return PublishSync.run(functionContext, exportContext)
+        end
+        return
+    end
+
     local catalog = LrApplication.activeCatalog()
     local exportSettings = exportContext.propertyTable
+    if not exportSettings then
+        LrDialogs.message("Export Before & After", "Missing export settings.", "critical")
+        return
+    end
+
     local afterSuffix = exportSettings.afterSuffix or "-after"
     local beforeSuffix = exportSettings.beforeSuffix or "-before"
 
@@ -85,6 +108,10 @@ function provider.processRenderedPhotos(functionContext, exportContext)
     end
 
     local nPhotos = exportContext.exportSession:countRenditions()
+    local progressScope = exportContext:configureProgress({
+        title = "Exporting Before & After (" .. nPhotos .. " photos)",
+    })
+
     local renditions = {}
     for _, rendition in exportContext:renditions({ stopIfCanceled = true }) do
         renditions[#renditions + 1] = rendition
@@ -99,10 +126,6 @@ function provider.processRenderedPhotos(functionContext, exportContext)
         "Export collision: mode=%s batchConflicts=%d",
         collisionMode, #conflicts
     ))
-
-    local progressScope = exportContext:configureProgress({
-        title = "Exporting Before & After (" .. nPhotos .. " photos)",
-    })
 
     local restoreFailures = {}
     local successCount = 0

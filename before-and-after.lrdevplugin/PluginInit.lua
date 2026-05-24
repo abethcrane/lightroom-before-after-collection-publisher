@@ -9,7 +9,7 @@ local ResetPreset = require "ResetPreset"
 local logger = LrLogger("BeforeAfterExport")
 logger:enable("logfile")
 
-logger:info("Before and After Export plugin loaded from " .. _PLUGIN.path)
+logger:info("Before and After plugin loaded from " .. _PLUGIN.path)
 
 local infoPath = LrPathUtils.child(_PLUGIN.path, "Info.lua")
 if LrFileUtils.exists(infoPath) then

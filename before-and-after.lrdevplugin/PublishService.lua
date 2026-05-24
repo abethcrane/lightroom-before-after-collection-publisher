@@ -11,12 +11,15 @@ local AuditCollections = require "AuditCollections"
 local BeforeAfterExport = require "BeforeAfterExport"
 local CatalogWrite = require "CatalogWrite"
 local PublishPaths = require "PublishPaths"
+local MarkUpToDate = require "MarkUpToDate"
+local PublishSync = require "PublishSync"
 local ResetPreset = require "ResetPreset"
 local RevealPublished = require "RevealPublished"
+local SyncFromDisk = require "SyncFromDisk"
+local SyncSettings = require "SyncSettings"
 
 local logger = LrLogger("BeforeAfterPublish")
 logger:enable("logfile")
-logger:enable("print")
 
 local provider = {}
 
@@ -56,6 +59,10 @@ provider.allowFileFormats = { "JPEG", "TIFF" }
 provider.allowColorSpaces = { "sRGB" }
 
 local computeSettingsHash = BeforeAfterExport.computeSettingsHash
+
+function provider.updateExportSettings(exportSettings)
+    SyncSettings.mergeCachedFolders(exportSettings)
+end
 
 local function validatePhoto(photo, publishSettings)
     local issues = {}
@@ -116,16 +123,43 @@ function provider.sectionsForTopOfDialog(f, propertyTable)
                 f:static_text { title = "Checks: title present, camera model present, creator matches required value.", fill_horizontal = 1, height_in_lines = 2 },
             },
         },
+        {
+            title = "Sync from disk",
+            synopsis = "Mark photos as published when files already exist",
+            f:row {
+                f:static_text {
+                    title = "If after/before files already exist on disk, mark all photos in your publish collections as up to date without re-exporting.",
+                    fill_horizontal = 1,
+                    height_in_lines = 2,
+                },
+            },
+            f:row {
+                f:push_button {
+                    title = "Mark all as up to date from disk…",
+                    action = function()
+                        MarkUpToDate.startFromPublishSettings(propertyTable)
+                    end,
+                },
+            },
+        },
     }
 end
 
 function provider.processRenderedPhotos(functionContext, exportContext)
-    local exportSession = exportContext.exportSession
-    local publishSettings = exportContext.propertyTable
+    if SyncFromDisk.isActive() then
+        return PublishSync.run(functionContext, exportContext)
+    end
+
+    if not exportContext or not exportContext.exportSession then
+        logger:error("processRenderedPhotos: missing export context or session")
+        return
+    end
+
+    local publishSettings = PublishSync.resolvePublishSettings(exportContext)
     local catalog = LrApplication.activeCatalog()
 
-    local afterFolder = publishSettings.afterFolder
-    local beforeFolder = publishSettings.beforeFolder
+    local afterFolder = publishSettings and publishSettings.afterFolder
+    local beforeFolder = publishSettings and publishSettings.beforeFolder
 
     if not afterFolder or afterFolder == "" or not beforeFolder or beforeFolder == "" then
         LrDialogs.message("Before & After Publish", "Please configure both 'after' and 'before' folder paths in the publish service settings.", "critical")
@@ -138,13 +172,15 @@ function provider.processRenderedPhotos(functionContext, exportContext)
         end
     end
 
+    local exportSession = exportContext.exportSession
+
     local resetPreset = ResetPreset.find()
     if not resetPreset then
         LrDialogs.message("Before & After Publish", ResetPreset.missingMessage(), "critical")
         return
     end
 
-    if publishSettings.validateMetadata then
+    if publishSettings and publishSettings.validateMetadata then
         local allIssues = {}
         local flaggedPhotos = {}
         for i, rendition in exportSession:renditions() do
