@@ -4,22 +4,16 @@ local LrFileUtils = import "LrFileUtils"
 local LrPathUtils = import "LrPathUtils"
 local LrShell = import "LrShell"
 
-local REMOTE_ID_SEP = "::"
+local PublishPaths = require "PublishPaths"
 
 local M = {}
 
 local function exportedFilenameFromRemoteId(remoteId)
-    if not remoteId then
-        return nil
-    end
-    local sep = remoteId:find(REMOTE_ID_SEP, 1, true)
-    if sep then
-        return remoteId:sub(1, sep - 1)
-    end
-    return remoteId
+    return PublishPaths.decodeRemoteId(remoteId)
 end
 
-local function isOurPublishService(service)
+function M.isOurPublishService(service)
+    if not service then return false end
     local pid = service:getPluginId()
     if pid == _PLUGIN.id then
         return true
@@ -28,19 +22,101 @@ local function isOurPublishService(service)
     return pid:sub(1, #prefix) == prefix
 end
 
+function M.isOurPublishedCollection(collection)
+    return M.isOurPublishService(collection:getService())
+end
+
+local function samePhoto(a, b)
+    if not a or not b then return false end
+    return a.localIdentifier == b.localIdentifier
+end
+
+local function addCollectionEntries(collection, entries)
+    if not M.isOurPublishedCollection(collection) then
+        return
+    end
+    local settings = collection:getService():getPublishSettings()
+    local publishedById = {}
+    for _, publishedPhoto in ipairs(collection:getPublishedPhotos()) do
+        local photo = publishedPhoto:getPhoto()
+        if photo then
+            publishedById[photo.localIdentifier] = publishedPhoto
+        end
+    end
+
+    local photosToScan = {}
+    if collection.getPhotos then
+        photosToScan = collection:getPhotos() or {}
+    end
+    if #photosToScan == 0 then
+        for _, publishedPhoto in pairs(publishedById) do
+            local photo = publishedPhoto:getPhoto()
+            if photo then
+                photosToScan[#photosToScan + 1] = photo
+            end
+        end
+    end
+
+    for _, photo in ipairs(photosToScan) do
+        local publishedPhoto = publishedById[photo.localIdentifier]
+        if publishedPhoto then
+            entries[#entries + 1] = {
+                photo = photo,
+                publishedPhoto = publishedPhoto,
+                settings = settings,
+            }
+        end
+    end
+end
+
+local function walkPublishedTree(node, entries)
+    for _, collection in ipairs(node:getChildCollections() or {}) do
+        addCollectionEntries(collection, entries)
+    end
+    for _, childSet in ipairs(node:getChildCollectionSets() or {}) do
+        walkPublishedTree(childSet, entries)
+    end
+end
+
+function M.collectPublishedPhotoEntries(catalog, activeOnly)
+    local entries = {}
+
+    if activeOnly ~= false then
+        for _, source in ipairs(catalog:getActiveSources() or {}) do
+            if source.getPublishedPhotos then
+                addCollectionEntries(source, entries)
+            end
+        end
+        if #entries > 0 then
+            return entries
+        end
+    end
+
+    local services = catalog:getPublishServices(_PLUGIN.id)
+    if services then
+        for _, service in ipairs(services) do
+            if M.isOurPublishService(service) then
+                walkPublishedTree(service, entries)
+            end
+        end
+    end
+
+    return entries
+end
+
 --- Recursively walk an LrPublishService or LrPublishedCollectionSet tree.
 local function findInPublishedTree(node, photo)
     for _, pc in ipairs(node:getChildCollections() or {}) do
         for _, pp in ipairs(pc:getPublishedPhotos()) do
-            if pp:getPhoto() == photo then
-                return pc:getService():getPublishSettings(), pp:getRemoteId()
+            if samePhoto(pp:getPhoto(), photo) then
+                return pc:getService():getPublishSettings(), pp
             end
         end
     end
     for _, childSet in ipairs(node:getChildCollectionSets() or {}) do
-        local settings, rid = findInPublishedTree(childSet, photo)
+        local settings, publishedPhoto = findInPublishedTree(childSet, photo)
         if settings then
-            return settings, rid
+            return settings, publishedPhoto
         end
     end
     return nil, nil
@@ -78,38 +154,43 @@ function M.revealPublishedSide(publishSettings, remoteId, side)
     LrShell.revealInShell(path)
 end
 
-function M.findOurPublishContext(photo)
-    -- Standard published collections only (fast path).
+function M.findOurPublishedPhoto(photo)
     local pubs = photo:getContainedPublishedCollections()
     if pubs then
         for _, pc in ipairs(pubs) do
             local svc = pc:getService()
-            if isOurPublishService(svc) then
+            if M.isOurPublishService(svc) then
                 for _, pp in ipairs(pc:getPublishedPhotos()) do
-                    if pp:getPhoto() == photo then
-                        return svc:getPublishSettings(), pp:getRemoteId()
+                    if samePhoto(pp:getPhoto(), photo) then
+                        return svc:getPublishSettings(), pp
                     end
                 end
             end
         end
     end
 
-    -- getContainedPublishedCollections omits *smart* published collections (SDK docs):
-    -- scan our publish services' full tree.
     local catalog = LrApplication.activeCatalog()
     local services = catalog:getPublishServices(_PLUGIN.id)
     if services then
         for _, svc in ipairs(services) do
-            if isOurPublishService(svc) then
-                local settings, rid = findInPublishedTree(svc, photo)
+            if M.isOurPublishService(svc) then
+                local settings, publishedPhoto = findInPublishedTree(svc, photo)
                 if settings then
-                    return settings, rid
+                    return settings, publishedPhoto
                 end
             end
         end
     end
 
     return nil, nil
+end
+
+function M.findOurPublishContext(photo)
+    local settings, publishedPhoto = M.findOurPublishedPhoto(photo)
+    if not settings then
+        return nil, nil
+    end
+    return settings, publishedPhoto:getRemoteId()
 end
 
 function M.revealForCatalogPhoto(photo, side)

@@ -25,6 +25,10 @@ return {
             title = "Go to Published After",
             file = "GoToPublishedAfter.lua",
         },
+        {
+            title = "Mark Published as Up to Date",
+            file = "MarkPublishedUpToDate.lua",
+        },
     },
 
     LrExportMenuItems = {
@@ -46,5 +50,5 @@ return {
         },
     },
 
-    VERSION = { major = 1, minor = 1, revision = 4, display = "1.1.4" },
+    VERSION = { major = 1, minor = 1, revision = 6, display = "1.1.6" },
 }

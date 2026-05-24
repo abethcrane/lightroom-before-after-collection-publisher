@@ -10,6 +10,7 @@ local LrView = import "LrView"
 local AuditCollections = require "AuditCollections"
 local BeforeAfterExport = require "BeforeAfterExport"
 local CatalogWrite = require "CatalogWrite"
+local PublishPaths = require "PublishPaths"
 local ResetPreset = require "ResetPreset"
 local RevealPublished = require "RevealPublished"
 
@@ -54,37 +55,7 @@ provider.hideSections = { "exportLocation", "fileNaming", "metadata" }
 provider.allowFileFormats = { "JPEG", "TIFF" }
 provider.allowColorSpaces = { "sRGB" }
 
-local REMOTE_ID_SEP = "::"
-
-local function getFileExtension(format)
-    if format == "TIFF" then return "tif" end
-    return "jpg"
-end
-
 local computeSettingsHash = BeforeAfterExport.computeSettingsHash
-
-local function encodeRemoteId(filename, settingsHash)
-    return filename .. REMOTE_ID_SEP .. settingsHash
-end
-
-local function decodeRemoteId(remoteId)
-    if not remoteId then return nil, nil end
-    local sep = remoteId:find(REMOTE_ID_SEP, 1, true)
-    if sep then
-        return remoteId:sub(1, sep - 1), remoteId:sub(sep + #REMOTE_ID_SEP)
-    end
-    return remoteId, nil
-end
-
-local function getExportFilename(photo, ext)
-    local baseName = LrPathUtils.removeExtension(photo:getFormattedMetadata("fileName"))
-    local dateStr = photo:getRawMetadata("dateTimeOriginalISO8601") or ""
-    local y, mo, d, h, mi, s = dateStr:match("(%d+)-(%d+)-(%d+)T(%d+):(%d+):(%d+)")
-    if y then
-        return string.format("%s-%s-%s-%s-%s-%s-%s.%s", y, mo, d, h, mi, s, baseName, ext)
-    end
-    return baseName .. "." .. ext
-end
 
 local function validatePhoto(photo, publishSettings)
     local issues = {}
@@ -226,8 +197,8 @@ function provider.processRenderedPhotos(functionContext, exportContext)
         local success, pathOrMsg = rendition:waitForRender()
 
         if success then
-            local ext = getFileExtension(publishSettings.LR_format or "JPEG")
-            local filename = getExportFilename(photo, ext)
+            local ext = PublishPaths.getFileExtension(PublishPaths.getExportFormat(publishSettings))
+            local filename = PublishPaths.getExportFilename(photo, ext)
             local currentSettings = photo:getDevelopSettings()
             local newHash = computeSettingsHash(currentSettings)
 
@@ -294,7 +265,7 @@ function provider.processRenderedPhotos(functionContext, exportContext)
             end
             newHash = restoreOk and expectedHash or computeSettingsHash(photo:getDevelopSettings())
 
-            rendition:recordPublishedPhotoId(encodeRemoteId(filename, newHash))
+            rendition:recordPublishedPhotoId(PublishPaths.encodeRemoteId(filename, newHash))
             rendition:recordPublishedPhotoUrl(afterPath)
             table.insert(publishedPhotos, photo)
         else
@@ -372,7 +343,7 @@ end
 
 function provider.deletePhotosFromPublishedCollection(publishSettings, arrayOfPhotoIds, deletedCallback, localCollectionId)
     for _, remoteId in ipairs(arrayOfPhotoIds) do
-        local filename = decodeRemoteId(remoteId)
+        local filename = PublishPaths.decodeRemoteId(remoteId)
         local afterPath = LrPathUtils.child(publishSettings.afterFolder, filename)
         local beforePath = LrPathUtils.child(publishSettings.beforeFolder, filename)
         if LrFileUtils.exists(afterPath) then LrFileUtils.delete(afterPath) end
@@ -384,7 +355,7 @@ end
 function provider.getCollectionBehaviorInfo(publishSettings)
     return {
         defaultCollectionName = "Photos",
-        defaultCollectionCanBeDeleted = false,
+        defaultCollectionCanBeDeleted = true,
         canAddCollection = true,
         maxCollectionSetDepth = 0,
     }

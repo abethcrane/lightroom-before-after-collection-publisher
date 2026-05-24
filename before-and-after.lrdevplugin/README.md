@@ -48,7 +48,11 @@ For ongoing workflows — add photos to a publish collection and re-export when 
    - **After folder** — where edited images are published
    - **Before folder** — where "before" versions are published
    - **Metadata validation** — optionally require title, camera model, and a specific creator
-4. Add photos to the default **Photos** collection and click **Publish**
+4. Add photos to a published collection (see below) and click **Publish**
+
+**Collections** — Lightroom requires a default **Photos** collection when you create a publish service. You can delete it once you've added your own collection (including a smart collection). The plugin can't pre-configure smart-collection rules; create one via **+** on the publish service, then delete the empty **Photos** collection if you don't need it.
+
+**Re-connecting after a service reset** — if files already exist on disk and you don't want to re-export everything, open your publish collection and run **Library → Plug-in Extras → Mark Published as Up to Date**. With nothing selected, it syncs the whole active collection. It checks that both after and before files exist, then marks each photo published without re-rendering.
 
 **Incremental behavior** — whenever Lightroom queues a photo for publish (first publish, develop edits, metadata edits, or **Mark for Republish**):
 - **After** is always re-exported
