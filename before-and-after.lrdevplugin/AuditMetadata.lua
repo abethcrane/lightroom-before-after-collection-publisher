@@ -6,6 +6,7 @@ local LrPathUtils = import "LrPathUtils"
 local LrProgressScope = import "LrProgressScope"
 
 local ReportPaths = require "ReportPaths"
+local MetadataValidation = require "MetadataValidation"
 
 local logger = LrLogger("BeforeAfterAudit")
 logger:enable("logfile")
@@ -25,25 +26,6 @@ local function getRequiredCreator()
         end
     end
     return nil
-end
-
-local function validatePhoto(photo, requiredCreator)
-    local issues = {}
-    local title = photo:getFormattedMetadata("title")
-    if not title or title == "" then
-        table.insert(issues, "missing title")
-    end
-    local camera = photo:getFormattedMetadata("cameraModel")
-    if not camera or camera == "" then
-        table.insert(issues, "missing camera model")
-    end
-    if requiredCreator then
-        local creator = photo:getFormattedMetadata("creator")
-        if creator ~= requiredCreator then
-            table.insert(issues, "creator is '" .. tostring(creator) .. "', expected '" .. requiredCreator .. "'")
-        end
-    end
-    return issues
 end
 
 local function findCollectionSet(catalog, name)
@@ -108,7 +90,9 @@ LrFunctionContext.postAsyncTaskWithContext("AuditMetadata", function(context)
         if progressScope:isCanceled() then break end
         progressScope:setPortionComplete(i, total)
 
-        local issues = validatePhoto(photo, requiredCreator)
+        local issues = MetadataValidation.validatePhoto(photo, {
+            requiredCreator = requiredCreator,
+        })
         if #issues > 0 then
             table.insert(flaggedPhotos, photo)
             local name = photo:getFormattedMetadata("fileName")

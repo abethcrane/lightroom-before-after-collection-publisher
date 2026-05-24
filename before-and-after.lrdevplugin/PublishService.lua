@@ -10,8 +10,10 @@ local LrView = import "LrView"
 local AuditCollections = require "AuditCollections"
 local BeforeAfterExport = require "BeforeAfterExport"
 local CatalogWrite = require "CatalogWrite"
-local PublishPaths = require "PublishPaths"
+local ExportParams = require "ExportParams"
 local MarkUpToDate = require "MarkUpToDate"
+local MetadataValidation = require "MetadataValidation"
+local PublishPaths = require "PublishPaths"
 local PublishSync = require "PublishSync"
 local ResetPreset = require "ResetPreset"
 local RevealPublished = require "RevealPublished"
@@ -62,25 +64,6 @@ local computeSettingsHash = BeforeAfterExport.computeSettingsHash
 
 function provider.updateExportSettings(exportSettings)
     SyncSettings.mergeCachedFolders(exportSettings)
-end
-
-local function validatePhoto(photo, publishSettings)
-    local issues = {}
-    local title = photo:getFormattedMetadata("title")
-    if not title or title == "" then
-        table.insert(issues, "missing title")
-    end
-    local camera = photo:getFormattedMetadata("cameraModel")
-    if not camera or camera == "" then
-        table.insert(issues, "missing camera model")
-    end
-    if publishSettings.requiredCreator and publishSettings.requiredCreator ~= "" then
-        local creator = photo:getFormattedMetadata("creator")
-        if creator ~= publishSettings.requiredCreator then
-            table.insert(issues, "creator is '" .. tostring(creator) .. "', expected '" .. publishSettings.requiredCreator .. "'")
-        end
-    end
-    return issues
 end
 
 function provider.sectionsForTopOfDialog(f, propertyTable)
@@ -185,7 +168,9 @@ function provider.processRenderedPhotos(functionContext, exportContext)
         local flaggedPhotos = {}
         for i, rendition in exportSession:renditions() do
             local photo = rendition.photo
-            local issues = validatePhoto(photo, publishSettings)
+            local issues = MetadataValidation.validatePhoto(photo, {
+                requiredCreator = publishSettings.requiredCreator,
+            })
             if #issues > 0 then
                 local name = photo:getFormattedMetadata("fileName")
                 table.insert(allIssues, name .. ": " .. table.concat(issues, ", "))
@@ -255,23 +240,9 @@ function provider.processRenderedPhotos(functionContext, exportContext)
                 photo:applyDevelopPreset(resetPreset)
             end)
 
-            local beforeExportParams = {
-                LR_export_destinationType = "specificFolder",
-                LR_export_destinationPathPrefix = beforeFolder,
-                LR_export_useSubfolder = false,
-                LR_format = publishSettings.LR_format or "JPEG",
-                LR_jpeg_quality = publishSettings.LR_jpeg_quality or 1,
-                LR_export_colorSpace = publishSettings.LR_export_colorSpace or "sRGB",
-                LR_size_doConstrain = publishSettings.LR_size_doConstrain or false,
-                LR_size_maxHeight = publishSettings.LR_size_maxHeight or 9999,
-                LR_size_maxWidth = publishSettings.LR_size_maxWidth or 9999,
-                LR_size_resizeType = publishSettings.LR_size_resizeType or "longEdge",
-                LR_collisionHandling = "overwrite",
-                LR_export_bitDepth = publishSettings.LR_export_bitDepth or 8,
-                LR_reimportExportedPhoto = false,
-                LR_outputSharpeningOn = publishSettings.LR_outputSharpeningOn or false,
-                LR_useWatermark = false,
-            }
+            local beforeExportParams = ExportParams.buildBeforeExportParams(
+                publishSettings, beforeFolder, "overwrite", { jpegQualityDefault = 1 }
+            )
 
             local beforeSession = LrExportSession({ photosToExport = { photo }, exportSettings = beforeExportParams })
             for _, bRendition in beforeSession:renditions() do
