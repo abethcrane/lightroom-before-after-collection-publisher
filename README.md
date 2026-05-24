@@ -67,6 +67,8 @@ Creates `dist/before-and-after-export-<version>.zip` with the plugin folder and 
 
 The Adobe Lightroom Classic SDK is **not** included in this repo. Download it from Adobe if you're extending the plugin.
 
+Manual regression checklist: [before-and-after.lrdevplugin/QA-GOLDEN-PATH.md](before-and-after.lrdevplugin/QA-GOLDEN-PATH.md)
+
 ## License
 
 MIT — see [LICENSE](LICENSE).

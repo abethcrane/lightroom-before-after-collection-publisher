@@ -139,9 +139,17 @@ Logs go to Lightroom's plugin log:
 - **macOS:** `~/Library/Application Support/Adobe/Lightroom/`
 - **Windows:** `%APPDATA%\Adobe\Lightroom\`
 
+## Testing
+
+Lightroom Classic has no headless runner for plugin integration tests — publish, export, and catalog flows require **manual QA in Lightroom**.
+
+See **[QA-GOLDEN-PATH.md](QA-GOLDEN-PATH.md)** for the regression checklist (golden paths + edge cases).
+
+Pure helpers (remote ID encoding, filename parsing) could be unit-tested outside LR later; nothing in-repo yet.
+
 ## Roadmap
 
 - [ ] Subfolder mode (before/ and after/ subdirectories instead of suffixes)
 - [ ] Configurable "before" definition (choose which settings to preserve)
 - [ ] Configurable before re-export (skip when develop settings unchanged, instead of always re-rendering)
-- [ ] More reliable publish "up to date" status (photos sometimes stay flagged for republish after the before restore)
+- [ ] Clear "ready to publish" after normal publish (photos sometimes stay in the publish queue with an edited/republish flag after the before-restore step — separate from sync-from-disk)
