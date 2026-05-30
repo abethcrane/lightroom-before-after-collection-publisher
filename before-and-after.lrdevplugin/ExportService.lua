@@ -187,16 +187,18 @@ function provider.processRenderedPhotos(functionContext, exportContext)
             local beforeOk = true
             local beforeErr = nil
             local beforeSkipped = false
+            local beforePath = nil
             for _, bRendition in beforeSession:renditions({ progressScope = progressScope }) do
                 local bSuccess, bPath = bRendition:waitForRender()
                 if bSuccess then
-                    local beforePath, skipped = BeforeAfterExport.renameRendition(
+                    local path, skipped = BeforeAfterExport.renameRendition(
                         bPath, photo, beforeSuffix, collisionResolver
                     )
                     if skipped then
                         beforeSkipped = true
                         logger:info("Skipped before export for " .. photoName)
                     else
+                        beforePath = path
                         logger:info("export-before " .. photoName .. ": wrote " .. beforePath)
                     end
                 else
@@ -205,6 +207,12 @@ function provider.processRenderedPhotos(functionContext, exportContext)
                     logger:error("Before render failed for " .. photoName .. ": " .. beforeErr)
                 end
             end
+
+            local exportedPaths = { afterPath }
+            if beforePath and LrFileUtils.exists(beforePath) then
+                exportedPaths[#exportedPaths + 1] = beforePath
+            end
+            MetadataExport.writeXmpTitlesForPhoto(photo, exportedPaths, exportSettings)
 
             if LrTasks.canYield() then
                 LrTasks.sleep(0.5)

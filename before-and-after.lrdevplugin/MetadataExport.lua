@@ -2,9 +2,25 @@
   Apply Lightroom export settings so catalog metadata (especially keywords marked
   for export) is written into rendered JPEGs. Used for publish "after" renders
   (via updateExportSettings) and nested "before" LrExportSession exports.
+
+  IPTC-IIM ObjectName (Lightroom "Title" in legacy IPTC) is capped at 64 bytes.
+  When LR embeds metadata, that truncation can propagate. For titles longer than
+  64 bytes we patch XMP-dc:Title via exiftool after render so the full catalog
+  title is preserved in XMP.
 ]]
 
+local LrFileUtils = import "LrFileUtils"
+local LrLogger = import "LrLogger"
+local LrShell = import "LrShell"
+local LrTasks = import "LrTasks"
+
 local MetadataExport = {}
+
+local logger = LrLogger("MetadataExport")
+logger:enable("logfile")
+
+local IPTC_OBJECT_NAME_MAX_BYTES = 64
+local WIN_ENV = WIN_ENV or (LrShell.pathToMsdosPath ~= nil)
 
 local METADATA_KEY_PATTERNS = {
     "^LR_metadata_",
@@ -94,6 +110,53 @@ function MetadataExport.applyToParams(params, exportSettings, options)
     options.sourceSettings = options.sourceSettings or exportSettings
     MetadataExport.apply(params, options)
     return params
+end
+
+local function shellQuote(value)
+    if WIN_ENV then
+        return '"' .. value:gsub('"', '\\"') .. '"'
+    end
+    return "'" .. value:gsub("'", "'\\''") .. "'"
+end
+
+--- @param title string UTF-8 catalog title
+function MetadataExport.titleNeedsXmpPatch(title)
+    return title and title ~= "" and #title > IPTC_OBJECT_NAME_MAX_BYTES
+end
+
+--- Write full catalog title to XMP-dc:Title (exiftool must be on PATH).
+--- @return boolean success
+function MetadataExport.writeXmpTitle(filePath, title)
+    if not MetadataExport.titleNeedsXmpPatch(title) then
+        return true
+    end
+    if not filePath or filePath == "" or not LrFileUtils.exists(filePath) then
+        return false
+    end
+
+    local cmd = "exiftool -overwrite_original -m -XMP-dc:Title="
+        .. shellQuote(title) .. " " .. shellQuote(filePath)
+    local exitCode = LrTasks.execute(cmd)
+    if exitCode ~= 0 then
+        logger:error("exiftool XMP-dc:Title failed (exit " .. tostring(exitCode) .. "): " .. filePath)
+        return false
+    end
+    logger:info("XMP-dc:Title patched (" .. #title .. " bytes): " .. filePath)
+    return true
+end
+
+--- Patch XMP-dc:Title on exported files when catalog title exceeds IPTC ObjectName limit.
+function MetadataExport.writeXmpTitlesForPhoto(photo, filePaths, exportSettings, options)
+    if not shouldIncludeKeywords(exportSettings, options) then
+        return
+    end
+    local title = photo:getFormattedMetadata("title")
+    if not MetadataExport.titleNeedsXmpPatch(title) then
+        return
+    end
+    for _, filePath in ipairs(filePaths) do
+        MetadataExport.writeXmpTitle(filePath, title)
+    end
 end
 
 return MetadataExport

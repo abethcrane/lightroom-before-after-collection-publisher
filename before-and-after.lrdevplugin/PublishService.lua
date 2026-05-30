@@ -289,10 +289,11 @@ function provider.processRenderedPhotos(functionContext, exportContext)
             )
 
             local beforeSession = LrExportSession({ photosToExport = { photo }, exportSettings = beforeExportParams })
+            local beforePath = nil
             for _, bRendition in beforeSession:renditions() do
                 local bSuccess, bPath = bRendition:waitForRender()
                 if bSuccess then
-                    local beforePath = LrPathUtils.child(beforeFolder, filename)
+                    beforePath = LrPathUtils.child(beforeFolder, filename)
                     if bPath ~= beforePath then
                         if LrFileUtils.exists(beforePath) then LrFileUtils.delete(beforePath) end
                         LrFileUtils.move(bPath, beforePath)
@@ -302,6 +303,12 @@ function provider.processRenderedPhotos(functionContext, exportContext)
                     logger:error("Before render failed for " .. photoName .. ": " .. tostring(bPath))
                 end
             end
+
+            local exportedPaths = { afterPath }
+            if beforePath and LrFileUtils.exists(beforePath) then
+                exportedPaths[#exportedPaths + 1] = beforePath
+            end
+            MetadataExport.writeXmpTitlesForPhoto(photo, exportedPaths, publishSettings)
 
             if LrTasks.canYield() then
                 LrTasks.sleep(0.5)
