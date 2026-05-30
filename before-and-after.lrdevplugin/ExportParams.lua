@@ -1,3 +1,5 @@
+local MetadataExport = require "MetadataExport"
+
 local ExportParams = {}
 
 local function getSetting(exportSettings, lrKey, shortKey)
@@ -7,7 +9,7 @@ end
 function ExportParams.buildBeforeExportParams(exportSettings, destDir, collisionMode, options)
     options = options or {}
 
-    return {
+    local params = {
         LR_export_destinationType = "specificFolder",
         LR_export_destinationPathPrefix = destDir,
         LR_export_useSubfolder = false,
@@ -26,6 +28,8 @@ function ExportParams.buildBeforeExportParams(exportSettings, destDir, collision
         LR_outputSharpeningOn = getSetting(exportSettings, "LR_outputSharpeningOn", "outputSharpeningOn") or false,
         LR_useWatermark = false,
     }
+
+    return MetadataExport.applyToParams(params, exportSettings, options)
 end
 
 return ExportParams

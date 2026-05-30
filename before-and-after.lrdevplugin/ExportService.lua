@@ -11,6 +11,7 @@ local AuditCollections = require "AuditCollections"
 local BeforeAfterExport = require "BeforeAfterExport"
 local CatalogWrite = require "CatalogWrite"
 local ExportParams = require "ExportParams"
+local MetadataExport = require "MetadataExport"
 local MetadataValidation = require "MetadataValidation"
 local PublishSync = require "PublishSync"
 local PublishSettingsCache = require "PublishSettingsCache"
@@ -26,6 +27,8 @@ local provider = {}
 provider.exportPresetFields = {
     { key = "afterSuffix", default = "-after" },
     { key = "beforeSuffix", default = "-before" },
+    { key = "includeKeywordsInExport", default = true },
+    { key = "keywordHierarchyInExport", default = true },
 }
 
 provider.allowFileFormats = { "JPEG", "TIFF" }
@@ -51,10 +54,30 @@ function provider.sectionsForTopOfDialog(f, propertyTable)
                 },
             },
         },
+        {
+            title = "Keywords in exported files",
+            synopsis = propertyTable.includeKeywordsInExport
+                and (propertyTable.keywordHierarchyInExport and "Hierarchy" or "Flat")
+                or "Off",
+            f:row {
+                f:checkbox {
+                    value = LrView.bind("includeKeywordsInExport"),
+                    title = "Write Lightroom keywords into after/before JPEGs (keywords must be marked Include on Export in the Keyword List)",
+                },
+            },
+            f:row {
+                f:checkbox {
+                    value = LrView.bind("keywordHierarchyInExport"),
+                    title = "Write keywords as Lightroom hierarchy (parent|child in XMP)",
+                    enabled = LrView.bind("includeKeywordsInExport"),
+                },
+            },
+        },
     }
 end
 
 function provider.updateExportSettings(exportSettings)
+    MetadataExport.apply(exportSettings)
     PublishSettingsCache.remember(nil, exportSettings)
     SyncSettings.mergeCachedFolders(exportSettings)
 end

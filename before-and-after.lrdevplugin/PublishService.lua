@@ -12,6 +12,7 @@ local BeforeAfterExport = require "BeforeAfterExport"
 local CatalogWrite = require "CatalogWrite"
 local ExportParams = require "ExportParams"
 local MarkUpToDate = require "MarkUpToDate"
+local MetadataExport = require "MetadataExport"
 local MetadataValidation = require "MetadataValidation"
 local PublishPaths = require "PublishPaths"
 local PublishSync = require "PublishSync"
@@ -39,6 +40,8 @@ provider.canExportVideo = false
 provider.exportPresetFields = {
     { key = "afterFolder",  default = "" },
     { key = "beforeFolder", default = "" },
+    { key = "includeKeywordsInExport", default = true },
+    { key = "keywordHierarchyInExport", default = true },
     { key = "validateMetadata", default = true },
     { key = "requiredCreator", default = "" },
 }
@@ -64,6 +67,7 @@ provider.allowColorSpaces = { "sRGB" }
 local computeSettingsHash = BeforeAfterExport.computeSettingsHash
 
 function provider.updateExportSettings(exportSettings)
+    MetadataExport.apply(exportSettings)
     PublishSettingsCache.remember(nil, exportSettings)
     SyncSettings.mergeCachedFolders(exportSettings)
 end
@@ -99,6 +103,32 @@ function provider.sectionsForTopOfDialog(f, propertyTable)
                             PublishSettingsCache.remember(nil, propertyTable)
                         end
                     end,
+                },
+            },
+        },
+        {
+            title = "Keywords in exported files",
+            synopsis = propertyTable.includeKeywordsInExport
+                and (propertyTable.keywordHierarchyInExport and "Hierarchy" or "Flat")
+                or "Off",
+            f:row {
+                f:checkbox {
+                    value = LrView.bind("includeKeywordsInExport"),
+                    title = "Write Lightroom keywords into after/before JPEGs (keywords must be marked Include on Export in the Keyword List)",
+                },
+            },
+            f:row {
+                f:checkbox {
+                    value = LrView.bind("keywordHierarchyInExport"),
+                    title = "Write keywords as Lightroom hierarchy (parent|child in XMP)",
+                    enabled = LrView.bind("includeKeywordsInExport"),
+                },
+            },
+            f:row {
+                f:static_text {
+                    title = "Unchecked: flat keyword list only. Uses Lightroom XMP embedding (exiftool -HierarchicalSubject to verify).",
+                    fill_horizontal = 1,
+                    height_in_lines = 2,
                 },
             },
         },

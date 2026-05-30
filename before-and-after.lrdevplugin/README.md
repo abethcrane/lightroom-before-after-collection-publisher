@@ -47,6 +47,7 @@ For ongoing workflows — add photos to a publish collection and re-export when 
 3. Configure:
    - **After folder** — where edited images are published
    - **Before folder** — where "before" versions are published
+   - **Keywords in exported files** — when enabled (default), Lightroom embeds keywords marked **Include on Export** into both after and before JPEGs (XMP, not ExifTool). **Hierarchy** (default) writes parent|child paths; uncheck for a flat list only.
    - **Metadata validation** — optionally require title, camera model, and a specific creator
 4. Add photos to a published collection (see below) and click **Publish**
 
